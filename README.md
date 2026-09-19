@@ -20,3 +20,9 @@ The initial concept was further developed into a multi-cloud architecture. The p
 
 <img width="1200" height="798" alt="image" src="https://github.com/user-attachments/assets/01c2d646-e16f-4aac-90d3-204fe929bb0c" />
 
+## 3. Final System Architecture
+
+The final architecture illustrates how CloudOps integrates cloud monitoring, cost optimization, analytics, AI-driven recommendations, policy enforcement, and automated actions into a unified multi-cloud platform supporting AWS, Azure, and GCP.
+
+<img width="1536" height="1024" alt="ChatGPT Image Sep 19, 2026, 12_22_54 PM" src="https://github.com/user-attachments/assets/c966f18c-14de-4a73-ba92-7549d8ed84a8" />
+
