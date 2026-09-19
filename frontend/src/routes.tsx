@@ -9,7 +9,6 @@ import { usePermission } from './hooks/usePermission';
 import { Permission } from './api/types';
 import { AppLayout } from './components/layout/AppLayout';
 import { LoginPage } from './features/auth/LoginPage';
-import { HomePage } from './pages/HomePage';
 import { PlaceholderPage, NotAuthorizedPage } from './pages/PlaceholderPage';
 
 // ---- Auth Guard ----
@@ -41,6 +40,12 @@ function PermissionGuard({
     return <>{children}</>;
 }
 
+import { DashboardPage } from './features/dashboard/DashboardPage';
+import { MonitoringPage } from './features/monitoring/MonitoringPage';
+import { ResourcesListPage } from './features/resources/ResourcesListPage';
+import { ResourceDetailPage } from './features/resources/ResourceDetailPage';
+import { CostsPage } from './features/costs/CostsPage';
+
 export function AppRoutes() {
     return (
         <Routes>
@@ -57,20 +62,15 @@ export function AppRoutes() {
             >
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-                {/* 1. Dashboard */}
-                <Route path="/dashboard" element={<HomePage />} />
+                {/* 1. Dashboard (Commit 3) */}
+                <Route path="/dashboard" element={<DashboardPage />} />
 
                 {/* 2. Monitoring (Commit 3) */}
                 <Route
                     path="/monitoring"
                     element={
                         <PermissionGuard permission="metrics.read">
-                            <PlaceholderPage
-                                title="Telemetry & Monitoring"
-                                description="Live performance charts, error rates, p95 latency heatmaps, and system throughput metrics."
-                                milestone="Commit 3 (M1)"
-                                permission="metrics.read"
-                            />
+                            <MonitoringPage />
                         </PermissionGuard>
                     }
                 />
@@ -80,12 +80,7 @@ export function AppRoutes() {
                     path="/resources"
                     element={
                         <PermissionGuard permission="resources.read">
-                            <PlaceholderPage
-                                title="Resource Inventory"
-                                description="Multi-cloud resource catalog with real-time health filters, search, and region tags."
-                                milestone="Commit 3 (M1)"
-                                permission="resources.read"
-                            />
+                            <ResourcesListPage />
                         </PermissionGuard>
                     }
                 />
@@ -95,12 +90,7 @@ export function AppRoutes() {
                     path="/resources/:id"
                     element={
                         <PermissionGuard permission="resources.read">
-                            <PlaceholderPage
-                                title="Resource Detail & Telemetry"
-                                description="Detailed view for individual compute, database, and container instances with time-series charts."
-                                milestone="Commit 3 (M1)"
-                                permission="resources.read"
-                            />
+                            <ResourceDetailPage />
                         </PermissionGuard>
                     }
                 />
@@ -110,12 +100,7 @@ export function AppRoutes() {
                     path="/costs"
                     element={
                         <PermissionGuard permission="costs.read">
-                            <PlaceholderPage
-                                title="Cost Intelligence & Forecasts"
-                                description="Cloud expenditure breakdown, monthly cost trends, budget tracking, and anomaly alerts."
-                                milestone="Commit 3 (M1)"
-                                permission="costs.read"
-                            />
+                            <CostsPage />
                         </PermissionGuard>
                     }
                 />
