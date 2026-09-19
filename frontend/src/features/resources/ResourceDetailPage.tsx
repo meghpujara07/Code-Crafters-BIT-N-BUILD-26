@@ -16,6 +16,7 @@ import {
     XCircle,
     Clock,
     Layers,
+    Sliders,
 } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import {
@@ -26,12 +27,14 @@ import {
     Interval,
 } from '../../api/types';
 import { MetricChart } from '../../components/charts/MetricChart';
+import { ScaleResourceModal } from './ScaleResourceModal';
 
 export function ResourceDetailPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<'metrics' | 'health' | 'cost'>('metrics');
     const [interval, setInterval] = useState<Interval>('5m');
+    const [isScaleModalOpen, setIsScaleModalOpen] = useState(false);
 
     // 1. Resource overview
     const { data: resource, isLoading: resLoading } = useQuery({
@@ -110,10 +113,20 @@ export function ResourceDetailPage() {
                         </div>
                     </div>
 
-                    <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>Monthly Cost</div>
-                        <div style={{ fontSize: 24, fontWeight: 600, color: 'var(--text-primary)' }}>
-                            ${resource.monthlyCostUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                        <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => setIsScaleModalOpen(true)}
+                            style={{ gap: 6 }}
+                        >
+                            <Sliders size={14} /> Scale Capacity
+                        </button>
+
+                        <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>Monthly Cost</div>
+                            <div style={{ fontSize: 24, fontWeight: 600, color: 'var(--text-primary)' }}>
+                                ${resource.monthlyCostUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -301,6 +314,12 @@ export function ResourceDetailPage() {
                     </div>
                 </div>
             )}
+
+            <ScaleResourceModal
+                resource={resource}
+                isOpen={isScaleModalOpen}
+                onClose={() => setIsScaleModalOpen(false)}
+            />
         </div>
     );
 }
