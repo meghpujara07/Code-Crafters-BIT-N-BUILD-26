@@ -46,6 +46,7 @@ import { ResourcesListPage } from './features/resources/ResourcesListPage';
 import { ResourceDetailPage } from './features/resources/ResourceDetailPage';
 import { CostsPage } from './features/costs/CostsPage';
 import { RecommendationsPage } from './features/recommendations/RecommendationsPage';
+import { ApprovalsPage } from './features/approvals/ApprovalsPage';
 
 export function AppRoutes() {
     return (
@@ -121,12 +122,7 @@ export function AppRoutes() {
                     path="/approvals"
                     element={
                         <PermissionGuard permission="actions.read">
-                            <PlaceholderPage
-                                title="Pending Action Approvals"
-                                description="Governance queue for high-impact infrastructure scaling actions requiring Manager sign-off."
-                                milestone="Commit 4 (M2)"
-                                permission="actions.read"
-                            />
+                            <ApprovalsPage />
                         </PermissionGuard>
                     }
                 />
