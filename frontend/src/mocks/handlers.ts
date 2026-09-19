@@ -68,7 +68,7 @@ const MOCK_RECOMMENDATIONS: Recommendation[] = [
         type: 'SCALE_UP',
         status: 'NEW',
         title: 'Scale checkout-api from 4 to 6 instances',
-        summary: 'Traffic is up 62% in the last few minutes and CPU is above 80%.',
+        summary: 'Traffic is up 62% in the last few minutes and CPU is above 80%. High latency risk during peak load.',
         confidence: 91,
         severity: 'WARNING',
         reason: [
@@ -111,7 +111,7 @@ const MOCK_RECOMMENDATIONS: Recommendation[] = [
         type: 'RIGHT_SIZE',
         status: 'NEW',
         title: 'Right-size worker-pool from t3.large to t3.medium',
-        summary: 'P95 CPU is under 30% and memory under 35% for the last 7 days.',
+        summary: 'P95 CPU is under 28.5% and memory under 35% for the last 7 days. Downscaling saves $91.10/mo.',
         confidence: 88,
         severity: 'INFO',
         reason: [
@@ -132,10 +132,79 @@ const MOCK_RECOMMENDATIONS: Recommendation[] = [
             checks: [
                 { name: 'PERMISSION', passed: true, message: 'You can request scaling actions.' },
                 { name: 'POLICY', passed: true, message: 'Resizing is allowed.' },
+                { name: 'BUDGET', passed: true, message: 'Reduces overall monthly expenditure.' },
             ],
         },
         createdAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    },
+    {
+        id: '9e3a2c74-5c1d-6e6a-b132-8f7a2f9a3c33',
+        resourceId: 'g1111111-1111-4111-a111-111111111111',
+        resourceName: 'analytics-cluster',
+        provider: 'GCP',
+        type: 'COST_OPTIMIZATION',
+        status: 'NEW',
+        title: 'Schedule non-prod analytics-cluster night shutdown',
+        summary: 'Analytics cluster remains idle between 8 PM and 6 AM daily. Automated night pause cuts GCP compute bill by $210/mo.',
+        confidence: 94,
+        severity: 'CRITICAL',
+        reason: [
+            { metric: 'idle_time_pct', observed: 82.0, threshold: 50, window: '14d' },
+        ],
+        proposedAction: { type: 'STOP', params: { targetInstances: 0 } },
+        costImpact: {
+            currentMonthlyCostUsd: 420.00,
+            projectedMonthlyCostUsd: 210.00,
+            deltaMonthlyUsd: -210.00,
+            deltaPercent: -50.0,
+            budget: null,
+        },
+        policyCheck: {
+            allowed: true,
+            requiresApproval: false,
+            approverRole: null,
+            checks: [
+                { name: 'PERMISSION', passed: true, message: 'Authorized for schedule management.' },
+                { name: 'POLICY', passed: true, message: 'Non-prod auto-shutdown compliant.' },
+            ],
+        },
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 172800000).toISOString(),
+    },
+    {
+        id: '1f4b3d85-6d2e-7f7b-c243-9a8b3a0b4d44',
+        resourceId: 'r2222222-2222-4222-a222-222222222222',
+        resourceName: 'backup-vault-v1',
+        provider: 'AZURE',
+        type: 'RESOURCE_ALLOCATION',
+        status: 'ACCEPTED',
+        title: 'Transition backup-vault-v1 to Azure Cool Storage Tier',
+        summary: 'Blob storage access frequency is < 1 query/month. Moving to Cool tier cuts storage unit cost by 60%.',
+        confidence: 96,
+        severity: 'INFO',
+        reason: [
+            { metric: 'access_frequency', observed: 0.2, threshold: 2.0, window: '30d' },
+        ],
+        proposedAction: { type: 'EXPAND_STORAGE', params: { targetStorageGb: 500 } },
+        costImpact: {
+            currentMonthlyCostUsd: 75.00,
+            projectedMonthlyCostUsd: 30.00,
+            deltaMonthlyUsd: -45.00,
+            deltaPercent: -60.0,
+            budget: null,
+        },
+        policyCheck: {
+            allowed: true,
+            requiresApproval: false,
+            approverRole: null,
+            checks: [
+                { name: 'PERMISSION', passed: true, message: 'Storage admin rights granted.' },
+                { name: 'POLICY', passed: true, message: 'Tier change policy compliant.' },
+            ],
+        },
+        createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
+        expiresAt: new Date(Date.now() + 86400000 * 10).toISOString(),
     },
 ];
 
@@ -526,21 +595,256 @@ export const handlers = [
         });
     }),
 
-    // ---- GET /api/v1/alerts ----
-    http.get('/api/v1/alerts', () => {
+    // ---- GET /api/v1/recommendations/:id ----
+    http.get('/api/v1/recommendations/:id', ({ params }) => {
+        const rec = MOCK_RECOMMENDATIONS.find(r => r.id === params.id);
+        if (!rec) {
+            return HttpResponse.json(
+                { success: false, error: { code: 'NOT_FOUND', message: 'Recommendation not found' } },
+                { status: 404 }
+            );
+        }
+        return HttpResponse.json({ success: true, data: rec });
+    }),
+
+    // ---- POST /api/v1/recommendations/:id/accept ----
+    http.post('/api/v1/recommendations/:id/accept', ({ params }) => {
+        const rec = MOCK_RECOMMENDATIONS.find(r => r.id === params.id);
+        if (rec) {
+            rec.status = 'ACCEPTED';
+        }
+        const action = {
+            id: `act-${Date.now()}`,
+            resourceId: rec?.resourceId || 'b4a2e0d1-0c3e-4f6a-8d75-2f7c9a1e5b30',
+            resourceName: rec?.resourceName || 'checkout-api',
+            recommendationId: rec?.id || null,
+            type: rec?.proposedAction.type || 'SCALE_OUT',
+            params: rec?.proposedAction.params || { targetInstances: 6 },
+            status: 'EXECUTING',
+            requestedBy: { id: '3d2f6b1e-7a44-4c0d-9e8b-5a1c2f9d0e33', name: 'Dev Ops' },
+            approvedBy: null,
+            validation: rec?.policyCheck || {
+                allowed: true,
+                requiresApproval: false,
+                approverRole: null,
+                checks: [{ name: 'PERMISSION', passed: true, message: 'Authorized' }],
+            },
+            costImpact: rec?.costImpact || {
+                currentMonthlyCostUsd: 121.47,
+                projectedMonthlyCostUsd: 182.21,
+                deltaMonthlyUsd: 60.74,
+                deltaPercent: 50.0,
+                budget: null,
+            },
+            result: null,
+            error: null,
+            createdAt: new Date().toISOString(),
+            executedAt: null,
+        };
+        return HttpResponse.json({ success: true, data: action }, { status: 201 });
+    }),
+
+    // ---- POST /api/v1/recommendations/:id/dismiss ----
+    http.post('/api/v1/recommendations/:id/dismiss', ({ params }) => {
+        const rec = MOCK_RECOMMENDATIONS.find(r => r.id === params.id);
+        if (rec) {
+            rec.status = 'DISMISSED';
+        }
+        return HttpResponse.json({ success: true, data: rec });
+    }),
+
+    // ---- POST /api/v1/ai/explain ----
+    http.post('/api/v1/ai/explain', async () => {
+        const data = {
+            explanation:
+                'Traffic on checkout-api increased by 62% in the past 10 minutes following a campaign launch. CPU utilization is currently hovering at 84.2%, exceeding the safety threshold of 75%. Scaling out from 4 to 6 instances will distribute incoming HTTP requests, bringing baseline CPU utilization down to ~55% while maintaining low latency (P95 < 200ms). The monthly cost increase of +$60.74 is well within the Production AWS budget limit.',
+            keyPoints: [
+                'Traffic spike detected: +62% HTTP request volume',
+                'CPU utilization exceeds 80% safety limit',
+                'Scaling out to 6 instances targets ~55% CPU utilization',
+                'Cost impact (+ $60.74/mo) is within monthly budget envelope',
+            ],
+            generatedAt: new Date().toISOString(),
+        };
+        return HttpResponse.json({ success: true, data });
+    }),
+
+    // ---- POST /api/v1/actions/preview ----
+    http.post('/api/v1/actions/preview', async ({ request }) => {
+        const body = (await request.json()) as any;
+        const targetQty = body.params?.targetInstances || 6;
+        const isBlocked = targetQty > 10;
+        const needsApproval = targetQty > 8;
+
+        const data = {
+            costImpact: {
+                currentMonthlyCostUsd: 121.47,
+                projectedMonthlyCostUsd: 30.37 * targetQty,
+                deltaMonthlyUsd: Math.round((30.37 * targetQty - 121.47) * 100) / 100,
+                deltaPercent: Math.round(((targetQty - 4) / 4) * 100),
+                budget: {
+                    name: 'Production AWS',
+                    limitUsd: 1000,
+                    usedUsd: 477.52,
+                    afterChangeUsd: 477.52 + (30.37 * targetQty - 121.47),
+                    withinBudget: true,
+                },
+            },
+            validation: {
+                allowed: !isBlocked,
+                requiresApproval: needsApproval,
+                approverRole: needsApproval ? 'MANAGER' : null,
+                checks: [
+                    { name: 'PERMISSION', passed: true, message: 'You have actions.request permission.' },
+                    {
+                        name: 'POLICY',
+                        passed: !isBlocked,
+                        message: isBlocked
+                            ? `Scaling to ${targetQty} instances exceeds the safety limit of 10.`
+                            : `${targetQty} instances is within the safety limit (max 10).`,
+                    },
+                    { name: 'BUDGET', passed: true, message: 'Stays within Production AWS budget.' },
+                    {
+                        name: 'APPROVAL',
+                        passed: !needsApproval,
+                        message: needsApproval
+                            ? `Cost increase of +$${(30.37 * targetQty - 121.47).toFixed(2)}/month requires Manager approval.`
+                            : 'No manager approval needed.',
+                    },
+                ],
+            },
+        };
+        return HttpResponse.json({ success: true, data });
+    }),
+
+    // ---- POST /api/v1/actions ----
+    http.post('/api/v1/actions', async ({ request }) => {
+        const body = (await request.json()) as any;
+        const targetQty = body.params?.targetInstances || 6;
+        const isBlocked = targetQty > 10;
+        const needsApproval = targetQty > 8;
+
+        let status = 'EXECUTING';
+        if (isBlocked) status = 'BLOCKED';
+        else if (needsApproval) status = 'PENDING_APPROVAL';
+
+        const action = {
+            id: `act-${Date.now()}`,
+            resourceId: body.resourceId || 'b4a2e0d1-0c3e-4f6a-8d75-2f7c9a1e5b30',
+            resourceName: 'checkout-api',
+            recommendationId: body.recommendationId || null,
+            type: body.type || 'SCALE_OUT',
+            params: body.params || { targetInstances: targetQty },
+            status,
+            requestedBy: { id: '3d2f6b1e-7a44-4c0d-9e8b-5a1c2f9d0e33', name: 'Dev Ops' },
+            approvedBy: null,
+            validation: {
+                allowed: !isBlocked,
+                requiresApproval: needsApproval,
+                approverRole: needsApproval ? ('MANAGER' as const) : null,
+                checks: [
+                    { name: 'PERMISSION', passed: true, message: 'Authorized' },
+                    {
+                        name: 'POLICY',
+                        passed: !isBlocked,
+                        message: isBlocked
+                            ? `Scaling to ${targetQty} instances exceeds maximum 10 limit.`
+                            : `${targetQty} instances within policy bounds.`,
+                    },
+                ],
+            },
+            costImpact: {
+                currentMonthlyCostUsd: 121.47,
+                projectedMonthlyCostUsd: 30.37 * targetQty,
+                deltaMonthlyUsd: Math.round((30.37 * targetQty - 121.47) * 100) / 100,
+                deltaPercent: Math.round(((targetQty - 4) / 4) * 100),
+                budget: null,
+            },
+            result: status === 'EXECUTING' ? { message: 'Scaling initiated via AWS Adapter' } : null,
+            error: isBlocked ? 'Safety limit policy violation' : null,
+            createdAt: new Date().toISOString(),
+            executedAt: status === 'EXECUTING' ? new Date().toISOString() : null,
+        };
+
+        return HttpResponse.json({ success: true, data: action }, { status: 201 });
+    }),
+
+    // ---- GET /api/v1/actions ----
+    http.get('/api/v1/actions', () => {
+        const mockActions = [
+            {
+                id: 'act-sample-pending',
+                resourceId: 'b4a2e0d1-0c3e-4f6a-8d75-2f7c9a1e5b30',
+                resourceName: 'checkout-api',
+                recommendationId: null,
+                type: 'SCALE_OUT',
+                params: { targetInstances: 10 },
+                status: 'PENDING_APPROVAL',
+                requestedBy: { id: '3d2f6b1e-7a44-4c0d-9e8b-5a1c2f9d0e33', name: 'Dev Ops' },
+                approvedBy: null,
+                validation: {
+                    allowed: true,
+                    requiresApproval: true,
+                    approverRole: 'MANAGER',
+                    checks: [
+                        { name: 'PERMISSION', passed: true, message: 'Requested by DevOps' },
+                        { name: 'POLICY', passed: true, message: '10 instances within limit' },
+                        { name: 'APPROVAL', passed: false, message: 'Requires Manager approval' },
+                    ],
+                },
+                costImpact: {
+                    currentMonthlyCostUsd: 121.47,
+                    projectedMonthlyCostUsd: 303.70,
+                    deltaMonthlyUsd: 182.23,
+                    deltaPercent: 150.0,
+                    budget: null,
+                },
+                result: null,
+                error: null,
+                createdAt: new Date(Date.now() - 900000).toISOString(),
+                executedAt: null,
+            },
+        ];
         return HttpResponse.json({
             success: true,
-            data: MOCK_ALERTS,
-            meta: { page: 1, pageSize: 20, total: MOCK_ALERTS.length, totalPages: 1 },
+            data: mockActions,
+            meta: { page: 1, pageSize: 20, total: mockActions.length, totalPages: 1 },
         });
     }),
 
-    // ---- GET /api/v1/anomalies ----
-    http.get('/api/v1/anomalies', () => {
+    // ---- POST /api/v1/actions/:id/approve ----
+    http.post('/api/v1/actions/:id/approve', ({ params }) => {
         return HttpResponse.json({
             success: true,
-            data: MOCK_ANOMALIES,
-            meta: { page: 1, pageSize: 20, total: MOCK_ANOMALIES.length, totalPages: 1 },
+            data: {
+                id: params.id,
+                status: 'EXECUTING',
+                approvedBy: { id: 'm2222222-2222-4222-a222-222222222222', name: 'Manager User' },
+                executedAt: new Date().toISOString(),
+            },
+        });
+    }),
+
+    // ---- POST /api/v1/actions/:id/reject ----
+    http.post('/api/v1/actions/:id/reject', ({ params }) => {
+        return HttpResponse.json({
+            success: true,
+            data: {
+                id: params.id,
+                status: 'REJECTED',
+            },
+        });
+    }),
+
+    // ---- POST /api/v1/actions/:id/cancel ----
+    http.post('/api/v1/actions/:id/cancel', ({ params }) => {
+        return HttpResponse.json({
+            success: true,
+            data: {
+                id: params.id,
+                status: 'CANCELLED',
+            },
         });
     }),
 ];
+

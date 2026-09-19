@@ -45,6 +45,7 @@ import { MonitoringPage } from './features/monitoring/MonitoringPage';
 import { ResourcesListPage } from './features/resources/ResourcesListPage';
 import { ResourceDetailPage } from './features/resources/ResourceDetailPage';
 import { CostsPage } from './features/costs/CostsPage';
+import { RecommendationsPage } from './features/recommendations/RecommendationsPage';
 
 export function AppRoutes() {
     return (
@@ -110,12 +111,7 @@ export function AppRoutes() {
                     path="/recommendations"
                     element={
                         <PermissionGuard permission="recommendations.read">
-                            <PlaceholderPage
-                                title="AI Optimization Recommendations"
-                                description="Actionable right-sizing and scale-down recommendations with interactive review drawers."
-                                milestone="Commit 4 (M2)"
-                                permission="recommendations.read"
-                            />
+                            <RecommendationsPage />
                         </PermissionGuard>
                     }
                 />
