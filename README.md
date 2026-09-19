@@ -18,5 +18,5 @@ The initial concept of CloudOps was to create a platform that acts as a bridge b
 
 The initial concept was further developed into a multi-cloud architecture. The proposed architecture includes real-time data collection from AWS, Azure, Google Cloud, and other providers, a central platform gateway, infrastructure monitoring, recommendation generation, and alert/notification integrations.
 
-<img width="1600" height="1000" alt="image" src="https://github.com/user-attachments/assets/726d9df5-8f69-4818-9ca7-2ef475bf6cc0" />
+<img width="1200" height="798" alt="image" src="https://github.com/user-attachments/assets/01c2d646-e16f-4aac-90d3-204fe929bb0c" />
 
