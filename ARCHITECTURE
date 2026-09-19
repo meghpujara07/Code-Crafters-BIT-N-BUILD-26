@@ -1,0 +1,1142 @@
+# CloudOps Platform — Architecture & Integration Contract
+
+> **Version:** 1.1.0 · **Status:** FROZEN (change only via the process in §18)
+> **Stack:** React (Vite + TypeScript) · FastAPI (Python) · PostgreSQL · Docker Compose
+> **Purpose:** Single source of truth so Frontend, Backend and Cloud Adapters can be built **separately (by different AIs/people)** and still plug together on the first try.
+> **Rule #1:** If this file and your code disagree, **this file wins**. Change the file first, then the code.
+
+---
+
+## 0. How to use this file (read first)
+
+1. Give **this whole file** to every AI/dev, plus the matching role prompt from §19.
+2. **Frontend** builds only against the API contract (§7–§9) and the types (§6). Never guess a field.
+3. **Backend** implements exactly those endpoints, shapes, enums and error codes.
+4. Both sides work in parallel: Backend ships **mock cloud adapters + seed data** (§11); Frontend runs on **MSW mocks built from the JSON in this file** until the backend is ready. Switching to the real backend must need **only env changes**.
+5. Anything not defined here → log it as a **CONTRACT GAP** (§18) and ask. Do not invent silently.
+
+---
+
+## 1. Product summary
+
+CloudOps is a unified platform to **monitor, manage, scale and cost-analyze** cloud infrastructure (AWS, Azure, GCP) through one simple UI, with **intelligent recommendations** that always respect **policies, budgets, permissions and safety limits**. **No change is applied without validation + authorization.**
+
+**Core workflow (must work end-to-end):**
+
+```
+Traffic spike detected → Recommendation created (scale out)
+→ Cost impact estimated → User reviews (cost + policy checks + AI explanation)
+→ User authorizes → Orchestrator validates (permission, policy, budget, approval)
+→ (Manager approval if a policy demands it) → Cloud adapter executes
+→ Status tracked live → Audit log + notification
+```
+
+---
+
+## 2. Architecture (maps 1:1 to the solution diagram)
+
+```mermaid
+flowchart TD
+  U[User: Developer/DevOps · Admin · Manager] --> FE[Frontend / UI - React]
+  FE -->|REST /api/v1 + WebSocket /ws| GW[Platform Gateway / API Backend - FastAPI]
+  FE <--> NS[Notification Service: Email · WhatsApp · In-App]
+  GW <--> DB[(PostgreSQL)]
+  GW --> ING[Data Ingestion]
+  GW --> POL[Policy & RBAC]
+  GW --> COST[Cost Engine]
+  ING --> AN[Analytics Engine]
+  POL --> AN
+  COST --> AN
+  AN --> REC[Recommendation Engine]
+  REC --> LLM[AI / LLM Layer]
+  LLM --> ORCH[Approval / Action Orchestrator]
+  ORCH --> ADP[Cloud Provider Adapter]
+  ADP --> AWS[AWS Adapter]
+  ADP --> AZ[Azure Adapter]
+  ADP --> GCP[GCP Adapter]
+  ORCH --> NS
+```
+
+| Layer | Responsibility | Backend module (`backend/app/`) | Owns (DB tables §5) |
+|---|---|---|---|
+| Frontend / UI | Dashboard, resources, monitoring, costs, recommendations, alerts, approvals | — | — |
+| Platform Gateway | Auth, routing, validation, envelope, WebSocket hub | `main.py`, `api/v1/*`, `realtime/` | users, refresh_tokens |
+| Data Ingestion | Pull metrics/traffic/health/storage from adapters on a schedule, normalize, store | `services/ingestion.py`, `jobs/` | metrics, resources |
+| Policy & RBAC | Permissions, budgets, safety limits, approval rules | `services/policy.py`, `core/security.py` | policies, budgets |
+| Cost Engine | Current cost, projected cost, cost impact of an action, forecasts | `services/cost.py` | costs, price_catalog |
+| Analytics Engine | Anomaly detection, trend analysis, health analysis | `services/analytics.py` | anomalies |
+| Recommendation Engine | Scale up/down, right-sizing, cost optimization, resource allocation | `services/recommendation.py` | recommendations |
+| AI / LLM Layer | Explain, summarize, natural-language Q&A (**never executes**) | `services/ai/` | ai_conversations |
+| Approval / Action Orchestrator | Validate (permission → policy → budget → approval) then execute | `services/orchestrator.py` | actions, audit_logs |
+| Cloud Provider Adapter | Uniform interface over AWS/Azure/GCP (+ mock) | `adapters/` | cloud_accounts |
+| Notification Service | Email, WhatsApp, in-app; optional MCP/other channels | `services/notification/` | notifications, notification_settings, alerts |
+
+> Diagram typos to ignore: "Paffic" = **Traffic**; the orchestrator's duplicated "Validate Budget" = **Validate Permission → Validate Policy → Validate Budget → Check Approval → Execute**.
+
+---
+
+## 3. Tech stack (decided — swap only if BOTH sides agree)
+
+### 3.1 Choices
+
+| Part | Choice |
+|---|---|
+| **Frontend** | **React 18 + TypeScript + Vite** · React Router v6 · TanStack Query v5 · Zustand (auth/session only) · Tailwind CSS + shadcn/ui · Recharts · react-hook-form + zod · lucide-react · sonner (toasts) · date-fns · **MSW** (mock API) · native `WebSocket` |
+| **Backend** | **Python 3.12 + FastAPI** · Uvicorn · SQLAlchemy 2.0 (async) + asyncpg · Alembic · Pydantic v2 + pydantic-settings · PyJWT · argon2-cffi · cryptography (Fernet) · APScheduler 3.x · httpx · numpy · pytest |
+| **Database** | **PostgreSQL 16** (no MongoDB — the data is relational and the solution diagram specifies PostgreSQL) |
+| **Cloud SDKs** | `boto3` (AWS), `azure-identity` + `azure-mgmt-*` (Azure), `google-cloud-*` (GCP). **Optional extras**, imported lazily inside live adapters so mock mode needs none of them |
+| **LLM** | Any provider behind an `LlmClient` interface (default: Anthropic Claude via the `anthropic` SDK). Model + key from env |
+| **Realtime** | FastAPI native WebSocket at `/ws` |
+| **Deploy** | Docker Compose: `db` + `backend` + `frontend` (nginx serves the React build **and** reverse-proxies `/api` and `/ws` → single origin, no CORS pain) |
+
+### 3.2 Why FastAPI (not MERN)
+- Python has the best cloud SDK coverage (boto3 etc.) and the numeric tools (numpy) needed for anomaly detection, trends and forecasting.
+- MERN implies MongoDB; our diagram and data model are PostgreSQL.
+- FastAPI auto-generates OpenAPI docs (`/api/docs`) from the same Pydantic models the code uses → easy contract checking between separately built parts.
+- Native WebSockets, async I/O for slow cloud calls, one small Docker image to deploy.
+- *(If the team is far stronger in JS, Node + Express + Prisma + PostgreSQL could implement the same contract — but this file assumes FastAPI.)*
+
+### 3.3 Repo layout (monorepo)
+
+```
+cloudops/
+├─ ARCHITECTURE.md                 ← this file
+├─ docker-compose.yml
+├─ .env.example                    ← all env vars (§15.1)
+├─ contracts/
+│   └─ openapi.json                ← exported from FastAPI (optional drift check)
+├─ backend/
+│   ├─ Dockerfile · requirements.txt · requirements-live.txt · alembic.ini
+│   ├─ alembic/versions/           ← migrations
+│   ├─ tests/
+│   └─ app/
+│       ├─ main.py                 ← create_app(), routers, exception handlers, lifespan (scheduler)
+│       ├─ core/    {config.py, security.py, errors.py, deps.py}
+│       ├─ db/      {session.py, base.py, models/*.py}
+│       ├─ schemas/ {base.py, *.py}          ← Pydantic models = §6 (camelCase)
+│       ├─ api/v1/  {auth, dashboard, cloud_accounts, resources, metrics, costs, billing,
+│       │            anomalies, recommendations, actions, policies, budgets, alerts,
+│       │            notifications, ai, users, audit, system}.py
+│       ├─ services/{ingestion, analytics, recommendation, cost, policy, orchestrator}.py
+│       │            ├─ ai/          {llm_client.py, prompts.py, tools.py}
+│       │            └─ notification/{base.py, in_app.py, email.py, whatsapp.py}
+│       ├─ adapters/{base.py, registry.py, mock.py, aws.py, azure.py, gcp.py}
+│       ├─ realtime/hub.py         ← WebSocket connection manager
+│       ├─ jobs/scheduler.py       ← APScheduler jobs
+│       └─ seed.py                 ← idempotent seed (§11)
+└─ frontend/
+    ├─ Dockerfile · nginx.conf · vite.config.ts · package.json
+    └─ src/
+        ├─ main.tsx · App.tsx · routes.tsx
+        ├─ api/      {client.ts, ws.ts, types.ts ← copy of §6, endpoints/*.ts}
+        ├─ mocks/    {browser.ts, handlers.ts, data/*.ts, fakeSocket.ts}
+        ├─ features/ {auth, dashboard, monitoring, resources, costs, recommendations,
+        │             approvals, policies, accounts, alerts, notifications, audit, users, ai}
+        ├─ components/ {ui, charts, layout}
+        ├─ store/ · hooks/ · lib/
+```
+
+---
+
+## 4. Global API conventions (NON-NEGOTIABLE)
+
+| Topic | Rule |
+|---|---|
+| Base path | `/api/v1` (relative; in dev Vite proxies it to `http://localhost:8000`). Swagger UI at `/api/docs` |
+| Format | JSON only, UTF-8 |
+| Field naming | **camelCase** in JSON · snake_case in Python/DB |
+| IDs | UUID v4 strings |
+| Timestamps | ISO-8601 **UTC** (`2026-09-19T10:30:00Z`); fractional seconds may appear — parse with `new Date()`. Backend uses timezone-aware UTC datetimes only |
+| Money | JSON **number** (never string), **USD**, rounded to 2 decimals, field names end in `Usd`. DB `NUMERIC(14,2)`; Pydantic schemas use `float` (**not** `Decimal` — Pydantic v2 serializes Decimal as a string) |
+| Percent | number 0–100 (not 0–1) |
+| Enums | UPPER_SNAKE_CASE strings exactly as in §6 |
+| Auth | `Authorization: Bearer <accessToken>` on everything except `/auth/login`, `/auth/refresh`, `/system/health` |
+| Idempotency | `POST /actions` requires header `Idempotency-Key: <uuid>` (missing → 400). Same key by the same user returns the original Action |
+| Pagination | `?page=1&pageSize=20` (page starts at 1, max pageSize 100) |
+| Sorting | `?sort=field,asc` or `?sort=field,desc` |
+| Time range | `?from=<ISO>&to=<ISO>&interval=1m\|5m\|15m\|1h\|1d` |
+| Success codes | **201** for: `POST /actions`, `POST /recommendations/{id}/accept`, `POST /users`, `/policies`, `/budgets`, `/cloud-accounts`. **200** for everything else (incl. DELETE → `{deleted:true}`; no 204) |
+
+### 4.1 Response envelope
+
+**Success (single object / array without paging):**
+```json
+{ "success": true, "data": { } }
+```
+**Paginated list** (`data` is always an array; `meta` present **only** on paginated lists):
+```json
+{ "success": true, "data": [ ], "meta": { "page": 1, "pageSize": 20, "total": 134, "totalPages": 7 } }
+```
+**Error:**
+```json
+{
+  "success": false,
+  "error": {
+    "code": "POLICY_VIOLATION",
+    "message": "Scaling to 12 instances exceeds the safety limit of 10.",
+    "details": [ { "field": "params.targetInstances", "reason": "max 10" } ]
+  }
+}
+```
+Nullable fields are always **present with `null`** (never omitted) inside `data`.
+
+### 4.2 Error codes
+
+| HTTP | `error.code` | When |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Bad/missing input (**override FastAPI's default 422** for request validation so this code/shape is used) |
+| 401 | `UNAUTHENTICATED` | Missing/expired token or bad credentials (frontend → refresh once, then login) |
+| 403 | `FORBIDDEN` | Role lacks permission |
+| 404 | `NOT_FOUND` | Entity or route missing |
+| 409 | `CONFLICT` | State conflict (e.g., approving an action that is no longer pending; accepting an already-accepted recommendation) |
+| 422 | `POLICY_VIOLATION` / `BUDGET_EXCEEDED` | Re-validation failed at approve time (§10.6) |
+| 429 | `RATE_LIMITED` | AI endpoints: 20 req/min/user |
+| 502 | `PROVIDER_ERROR` | Cloud provider call failed |
+| 500 | `INTERNAL_ERROR` | Anything else (never leak stack traces) |
+
+### 4.3 FastAPI implementation contract (copy this pattern)
+
+```python
+# app/schemas/base.py
+from typing import Generic, TypeVar
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
+
+T = TypeVar("T")
+
+class CamelModel(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
+
+class PageMeta(CamelModel):
+    page: int; page_size: int; total: int; total_pages: int
+
+class ApiResponse(CamelModel, Generic[T]):        # single object / plain array — NO meta key
+    success: bool = True
+    data: T
+
+class PagedResponse(CamelModel, Generic[T]):      # paginated list — meta required
+    success: bool = True
+    data: list[T]
+    meta: PageMeta
+```
+```python
+# app/core/errors.py  (+ register in main.py)
+class ApiError(Exception):
+    def __init__(self, status: int, code: str, message: str, details: list[dict] | None = None): ...
+# Handlers required in main.py — all must emit the §4.1 error envelope:
+#   ApiError · RequestValidationError → 400 VALIDATION_ERROR · StarletteHTTPException (404 etc.)
+#   · unhandled Exception → 500 INTERNAL_ERROR
+# main.py: FastAPI(docs_url="/api/docs", openapi_url="/api/openapi.json")
+# Do NOT use response_model_exclude_none (nullable fields must stay in the payload).
+# Permission guard: Depends(require("actions.request")) → raises ApiError(403, "FORBIDDEN", ...)
+```
+
+---
+
+## 5. Database schema (PostgreSQL 16, managed by Alembic)
+
+All tables: `id UUID PK` (generated in Python `uuid4`), `created_at`, `updated_at` (`timestamptz`) unless noted.
+
+| Table | Key columns |
+|---|---|
+| `users` | email (unique), password_hash (argon2), name, role (`ADMIN\|MANAGER\|DEVOPS\|VIEWER`), active |
+| `refresh_tokens` | user_id FK, jti (unique), expires_at, revoked_at — enables rotation + logout |
+| `cloud_accounts` | provider (`AWS\|AZURE\|GCP`), name, external_account_id, regions text[], credentials_encrypted (Fernet; **never returned or logged**), mode (`MOCK\|LIVE`), status (`CONNECTED\|ERROR\|SYNCING`), last_synced_at |
+| `resources` | cloud_account_id FK, provider, external_id, name, type, region, status, health, size, quantity, min_quantity, max_quantity, supported_actions text[], storage_gb, monthly_cost_usd, tags JSONB, metadata JSONB, last_seen_at · unique (cloud_account_id, external_id) |
+| `metrics` | resource_id FK, metric, ts, value · **PK (resource_id, metric, ts)** + index (resource_id, metric, ts DESC). No id/updated_at. Raw retention 14 days (nightly purge job) |
+| `costs` | cloud_account_id, resource_id (nullable), provider, service, usage_date (date), amount_usd, tags JSONB · unique (cloud_account_id, resource_id, service, usage_date) · index (usage_date, provider) |
+| `price_catalog` | provider, region, resource_type, size, vcpu, memory_gb, hourly_price_usd (storage rows: size=`per_gb_month`) |
+| `anomalies` | kind, resource_id (nullable), severity, metric, expected_value, observed_value, detected_at, status (`OPEN\|ACKNOWLEDGED\|RESOLVED`) |
+| `recommendations` | resource_id, type, status, title, summary, confidence, severity, reason JSONB, proposed_action JSONB, cost_impact JSONB (snapshot at creation), expires_at, dismissed_at, dismissed_by. **No `policy_check` column** — it is computed per requesting user at read time |
+| `policies` | name, type (`SAFETY_LIMIT\|APPROVAL_RULE`), enabled, priority, scope JSONB, rules JSONB |
+| `budgets` | name, scope (`GLOBAL\|PROVIDER\|ACCOUNT\|TAG`), scope_value, amount_usd, period (`MONTHLY`), alert_thresholds int[], hard_limit bool |
+| `actions` | resource_id, recommendation_id (nullable), type, params JSONB, status, requested_by, approved_by, validation JSONB, cost_impact JSONB, provider_operation_id, result JSONB, error, idempotency_key, executed_at · **unique (requested_by, idempotency_key)** |
+| `alerts` | severity, source, title, message, resource_id, anomaly_id, status |
+| `notifications` | user_id, channel, title, body, entity_type, entity_id, read_at, sent_at, delivery_status — one row per (user, channel); the in-app inbox = rows with `channel=IN_APP` |
+| `notification_settings` | user_id, channel, enabled, events text[], destination |
+| `audit_logs` | actor_id (nullable = SYSTEM), action, entity_type, entity_id, before JSONB, after JSONB, ip, ts — **append-only** |
+| `ai_conversations` | user_id, messages JSONB |
+
+---
+
+## 6. Shared types & enums (source of truth → copy to `frontend/src/api/types.ts`; backend Pydantic models mirror them)
+
+### 6.1 Enums & envelope
+
+```ts
+export type Role = 'ADMIN' | 'MANAGER' | 'DEVOPS' | 'VIEWER';   // privilege order: VIEWER < DEVOPS < MANAGER < ADMIN
+export type Provider = 'AWS' | 'AZURE' | 'GCP';
+export type ResourceType = 'COMPUTE' | 'DATABASE' | 'STORAGE' | 'LOAD_BALANCER' | 'CONTAINER';
+export type ResourceStatus = 'RUNNING' | 'STOPPED' | 'PROVISIONING' | 'ERROR';
+export type Health = 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY' | 'UNKNOWN';
+export type Severity = 'INFO' | 'WARNING' | 'CRITICAL';
+
+export type RecommendationType =
+  'SCALE_UP' | 'SCALE_DOWN' | 'RIGHT_SIZE' | 'COST_OPTIMIZATION' | 'RESOURCE_ALLOCATION';
+export type RecommendationStatus = 'NEW' | 'ACCEPTED' | 'DISMISSED' | 'EXPIRED';
+
+export type ActionType = 'SCALE_OUT' | 'SCALE_IN' | 'RESIZE' | 'EXPAND_STORAGE' | 'START' | 'STOP';
+export type ActionStatus =
+  'PENDING_APPROVAL' | 'APPROVED' | 'EXECUTING' | 'SUCCEEDED' | 'FAILED' | 'REJECTED' | 'BLOCKED' | 'CANCELLED';
+
+export type PolicyType = 'SAFETY_LIMIT' | 'APPROVAL_RULE';
+export type AnomalyKind = 'TRAFFIC' | 'COST' | 'LATENCY' | 'ERROR_RATE' | 'HEALTH';
+export type Channel = 'EMAIL' | 'WHATSAPP' | 'IN_APP';
+export type Interval = '1m' | '5m' | '15m' | '1h' | '1d';
+export type ErrorCode =
+  'VALIDATION_ERROR' | 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'CONFLICT' |
+  'POLICY_VIOLATION' | 'BUDGET_EXCEEDED' | 'RATE_LIMITED' | 'PROVIDER_ERROR' | 'INTERNAL_ERROR';
+
+export interface PageMeta { page: number; pageSize: number; total: number; totalPages: number }
+export interface ApiSuccess<T> { success: true; data: T }
+export interface ApiList<T>    { success: true; data: T[]; meta: PageMeta }
+export interface ApiFailure    { success: false; error: { code: ErrorCode; message: string; details?: { field?: string; reason: string }[] } }
+```
+
+### 6.2 Canonical metric names (only these; unit is fixed)
+
+| `metric` | unit | Meaning | Applies to | Downsample rule |
+|---|---|---|---|---|
+| `cpu_utilization` | percent | CPU | COMPUTE, DATABASE, CONTAINER | avg |
+| `memory_utilization` | percent | Memory | COMPUTE, DATABASE, CONTAINER | avg |
+| `request_rate` | req_per_sec | **Traffic** | COMPUTE, CONTAINER, LOAD_BALANCER, STORAGE | avg |
+| `latency_p50_ms` `latency_p95_ms` `latency_p99_ms` | ms | **Latency** | COMPUTE, CONTAINER, LOAD_BALANCER, DATABASE (p95 only) | avg |
+| `error_rate` | percent | 5xx / failures | COMPUTE, CONTAINER, LOAD_BALANCER, STORAGE | avg |
+| `storage_used_gb` | gb | **Storage** used | DATABASE, STORAGE | last |
+| `storage_utilization` | percent | Storage % used | DATABASE, STORAGE | last |
+| `network_in_mbps` `network_out_mbps` | mbps | Network | COMPUTE, CONTAINER, LOAD_BALANCER | avg |
+| `uptime_percent` | percent | **Uptime** (per bucket) | all | avg |
+| `instance_count` | count | Running instances | COMPUTE, CONTAINER | max |
+
+Requesting a metric that doesn't apply to the resource type → returns an empty `points: []` series (not an error).
+`from/to/interval` producing more than **500 points** → `400 VALIDATION_ERROR`. If `interval` is omitted: range ≤1h→`1m`, ≤6h→`5m`, ≤48h→`15m`, ≤7d→`1h`, else `1d`. Default range when `from/to` omitted: metrics = last 1 h; costs = month-to-date.
+
+### 6.3 Core models
+
+```ts
+export type Permission =
+  | 'resources.read' | 'metrics.read' | 'costs.read' | 'recommendations.read' | 'actions.read'
+  | 'policies.read' | 'ai.use'
+  | 'actions.request' | 'actions.approve'
+  | 'budgets.write' | 'audit.read'
+  | 'policies.write' | 'accounts.manage' | 'users.manage';
+
+export interface User {
+  id: string; email: string; name: string; role: Role;
+  permissions: Permission[];           // §12 — frontend uses this to show/hide UI
+}
+
+export type CloudCredentials =         // WRITE-ONLY (request bodies); never returned by any endpoint
+  | { provider: 'AWS'; authType: 'ACCESS_KEY'; accessKeyId: string; secretAccessKey: string }
+  | { provider: 'AWS'; authType: 'ASSUME_ROLE'; roleArn: string; externalId: string }
+  | { provider: 'AZURE'; tenantId: string; clientId: string; clientSecret: string; subscriptionId: string }
+  | { provider: 'GCP'; projectId: string; serviceAccountJson: string };
+
+export interface CloudAccount {
+  id: string; provider: Provider; name: string; externalAccountId: string;
+  regions: string[]; mode: 'MOCK' | 'LIVE';
+  status: 'CONNECTED' | 'ERROR' | 'SYNCING'; lastSyncedAt: string | null;
+  resourceCount: number;
+}
+
+export interface Resource {
+  id: string; accountId: string; provider: Provider; externalId: string;
+  name: string; type: ResourceType; region: string;
+  status: ResourceStatus; health: Health;
+  size: string;                 // "t3.medium" | "Standard_D2s_v3" | "e2-medium" ...
+  quantity: number;             // current instance count (ASG desired / VMSS / MIG size)
+  minQuantity: number; maxQuantity: number;   // hard safety bounds, always enforced
+  supportedActions: ActionType[];             // UI shows only these; empty = read-only resource
+  storageGb: number | null;
+  monthlyCostUsd: number;
+  tags: Record<string, string>;
+  latest: {                     // snapshot for list views (no extra call needed)
+    cpuUtilization: number | null; memoryUtilization: number | null;
+    requestRate: number | null; latencyP95Ms: number | null;
+    errorRate: number | null; storageUtilization: number | null;
+  };
+  lastSeenAt: string;
+}
+
+export interface MetricPoint { t: string; v: number }
+export interface MetricSeries { metric: string; unit: string; points: MetricPoint[] }
+
+export interface MoneyImpact {
+  currentMonthlyCostUsd: number;
+  projectedMonthlyCostUsd: number;
+  deltaMonthlyUsd: number;           // projected - current (negative = saving)
+  deltaPercent: number;
+  budget: {                          // the TIGHTEST matching budget (highest afterChange/limit); null if none match
+    name: string; limitUsd: number; usedUsd: number; afterChangeUsd: number; withinBudget: boolean
+  } | null;
+}
+
+export interface ProposedAction {
+  type: ActionType;
+  params: {
+    targetInstances?: number;        // SCALE_OUT / SCALE_IN
+    targetSize?: string;             // RESIZE
+    targetStorageGb?: number;        // EXPAND_STORAGE
+  };                                 // START / STOP → {}
+}
+
+export interface ValidationResult {
+  allowed: boolean;                  // false → cannot proceed (BLOCKED)
+  requiresApproval: boolean;         // true → needs approverRole
+  approverRole: Role | null;         // minimum role that may approve
+  checks: {
+    name: 'PERMISSION' | 'POLICY' | 'BUDGET' | 'APPROVAL';
+    passed: boolean;
+    message: string;                 // human-readable — show as-is in the UI
+  }[];
+}
+
+export interface Recommendation {
+  id: string; resourceId: string; resourceName: string; provider: Provider;
+  type: RecommendationType; status: RecommendationStatus;
+  title: string; summary: string;
+  confidence: number;                // 0-100
+  severity: Severity;
+  reason: { metric: string; observed: number; threshold: number; window: string }[];
+  proposedAction: ProposedAction;
+  costImpact: MoneyImpact;
+  policyCheck: ValidationResult;     // computed at read time for the *requesting user's role*
+  createdAt: string; expiresAt: string;
+}
+
+export interface Action {
+  id: string; resourceId: string; resourceName: string; recommendationId: string | null;
+  type: ActionType; params: ProposedAction['params'];
+  status: ActionStatus;
+  requestedBy: { id: string; name: string };
+  approvedBy: { id: string; name: string } | null;   // set when approval was required (explicit, or requester's role ≥ approverRole); null if no approval rule matched
+  validation: ValidationResult;
+  costImpact: MoneyImpact;
+  result: { message: string; providerOperationId?: string } | null;
+  error: string | null;
+  createdAt: string; executedAt: string | null;
+}
+
+export interface Alert {
+  id: string; severity: Severity; title: string; message: string;
+  source: 'ANOMALY' | 'HEALTH' | 'BUDGET' | 'ACTION' | 'SYSTEM';
+  resourceId: string | null; status: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED'; createdAt: string;
+}
+
+export interface Anomaly {
+  id: string; kind: AnomalyKind; severity: Severity; resourceId: string | null; resourceName: string | null;
+  metric: string; expectedValue: number; observedValue: number;
+  status: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED'; detectedAt: string;
+}
+
+export interface Policy {
+  id: string; name: string; type: PolicyType; enabled: boolean; priority: number;   // priority: lower = shown/evaluated first (all matching policies apply)
+  scope: { provider?: Provider; accountId?: string; resourceType?: ResourceType; tags?: Record<string, string> };
+  rules: SafetyLimitRules | ApprovalRules;
+}
+export interface SafetyLimitRules {
+  maxInstances?: number; minInstances?: number;
+  maxScaleStepPercent?: number;             // max |target-current|/current per single action
+  maxCostIncreasePerActionUsd?: number;     // max positive monthly delta per single action
+  blockedActions?: ActionType[];
+  allowedWindows?: { days: number[]; startHour: number; endHour: number; timezone: string }[];  // days 0=Sun..6=Sat
+}
+export interface ApprovalRules {
+  requireApprovalWhen: { costDeltaMonthlyUsdGt?: number; actionTypeIn?: ActionType[] };  // OR-combined
+  approverRole: 'MANAGER' | 'ADMIN';
+}
+
+export interface Budget {
+  id: string; name: string; scope: 'GLOBAL' | 'PROVIDER' | 'ACCOUNT' | 'TAG';
+  scopeValue: string | null;                // PROVIDER: "AWS" · ACCOUNT: accountId · TAG: "key:value" · GLOBAL: null
+  amountUsd: number; period: 'MONTHLY'; alertThresholds: number[]; hardLimit: boolean;
+  usedUsd: number; usedPercent: number; forecastUsd: number;   // computed by backend (month-to-date / forecast)
+}
+
+export interface Notification {
+  id: string; channel: Channel; title: string; body: string;
+  entityType: string | null; entityId: string | null; readAt: string | null; createdAt: string;
+}
+```
+
+---
+
+## 7. REST API
+
+> 🔒 = needs auth · `perm` = required permission (§12; missing → `403 FORBIDDEN`). All responses use the §4.1 envelope; only `data` is shown below. Paths are relative to `/api/v1`.
+
+### 7.1 Auth
+
+| Method | Path | Body | `data` |
+|---|---|---|---|
+| POST | `/auth/login` | `{ email, password }` | `{ accessToken, refreshToken, expiresIn: 900, user: User }` (bad credentials → 401 `UNAUTHENTICATED`; inactive user → 403) |
+| POST | `/auth/refresh` | `{ refreshToken }` | `{ accessToken, refreshToken, expiresIn }` — **rotates**: old refresh token is revoked; reuse of a revoked one → 401 |
+| POST 🔒 | `/auth/logout` | `{ refreshToken }` | `{ loggedOut: true }` (revokes it) |
+| GET 🔒 | `/auth/me` | – | `User` |
+
+JWT claims: `sub` (user id), `role`, `exp`, `jti`. Access token 15 min, refresh token 7 days.
+
+### 7.2 Dashboard (one call for the landing page)
+
+`GET /dashboard/overview` 🔒 `metrics.read` — query `?provider=` →
+
+```json
+{
+  "resources": { "total": 13, "byHealth": { "HEALTHY": 10, "DEGRADED": 2, "UNHEALTHY": 1, "UNKNOWN": 0 },
+                 "byProvider": { "AWS": 5, "AZURE": 4, "GCP": 4 } },
+  "traffic":   { "requestRate": 1840.5, "changePercent": 62.3 },
+  "latency":   { "p95Ms": 312, "changePercent": 18.4 },
+  "uptime":    { "percent": 99.95 },
+  "storage":   { "usedGb": 4210, "totalGb": 6000, "utilizationPercent": 70.2 },
+  "cost":      { "monthToDateUsd": 8420.15, "forecastEndOfMonthUsd": 13100.00,
+                 "budgetUsd": 15000, "budgetUsedPercent": 56.1 },
+  "counts":    { "openAlerts": 3, "newRecommendations": 5, "pendingApprovals": 2 }
+}
+```
+`changePercent` (traffic/latency) = last 15 min average vs. the preceding 60 min average. `budgetUsd` = the GLOBAL budget (0 if none).
+
+### 7.3 Cloud accounts
+
+| Method | Path | perm | Body / Query | `data` |
+|---|---|---|---|---|
+| GET | `/cloud-accounts` | `resources.read` | – | `CloudAccount[]` |
+| POST (201) | `/cloud-accounts` | `accounts.manage` | `{ provider, name, externalAccountId, regions: string[], mode, credentials?: CloudCredentials }` — `credentials` required when `mode=LIVE` (validated via adapter; invalid → 400). Triggers an initial sync | `CloudAccount` |
+| POST | `/cloud-accounts/{id}/sync` | `accounts.manage` | – | `{ status: "SYNCING" }` |
+| DELETE | `/cloud-accounts/{id}` | `accounts.manage` | – | `{ deleted: true }` (cascades its resources/metrics) |
+
+### 7.4 Resources
+
+| Method | Path | perm | Query | `data` |
+|---|---|---|---|---|
+| GET | `/resources` | `resources.read` | `provider, accountId, type, status, health, region, search, tag=key:value, page, pageSize, sort` (default `name,asc`) | `Resource[]` + `meta` |
+| GET | `/resources/{id}` | `resources.read` | – | `Resource` |
+| GET | `/resources/{id}/metrics` | `metrics.read` | `metric=cpu_utilization,request_rate&from&to&interval` | `{ resourceId, interval, series: MetricSeries[] }` |
+| GET | `/resources/{id}/health` | `metrics.read` | – | `{ health, uptimePercent, checks: [{ name, status: "PASS"\|"WARN"\|"FAIL", message }], lastIncidentAt: string \| null }` |
+| GET | `/resources/{id}/cost` | `costs.read` | `from&to` | `{ monthToDateUsd, forecastUsd, dailyCosts: [{ date, amountUsd }] }` |
+
+### 7.5 Monitoring (fleet-level)
+
+| Method | Path | perm | Query | `data` |
+|---|---|---|---|---|
+| GET | `/metrics/summary` | `metrics.read` | `from,to,provider,accountId` | `{ traffic:{ avg, peak, changePercent }, latency:{ p50Ms, p95Ms, p99Ms }, uptimePercent, errorRate, storage:{ usedGb, totalGb, utilizationPercent }, healthCounts:{ HEALTHY, DEGRADED, UNHEALTHY, UNKNOWN } }` |
+| GET | `/metrics/timeseries` | `metrics.read` | `metric, from, to, interval, groupBy=none\|provider\|resourceType, provider` | `{ metric, unit, interval, series: [{ key: string, points: MetricPoint[] }] }` (`key` = `"all"` when `groupBy=none`) |
+
+### 7.6 Costs & billing
+
+| Method | Path | perm | Query | `data` |
+|---|---|---|---|---|
+| GET | `/costs/summary` | `costs.read` | `from,to,provider,accountId` | `{ monthToDateUsd, forecastEndOfMonthUsd, lastMonthUsd, changePercent, budgetUsd, budgetUsedPercent, currency: "USD" }` — `lastMonthUsd` = full previous month; `changePercent` = month-to-date vs the same elapsed days last month |
+| GET | `/costs/timeseries` | `costs.read` | `from,to,interval=1d,groupBy=none\|provider\|service\|account` | `{ interval, series: [{ key, points: [{ t, v }] }] }` (`v` = USD) |
+| GET | `/costs/breakdown` | `costs.read` | `from,to,groupBy=service\|provider\|resource\|account, limit` | `[{ key, label, amountUsd, percent }]` |
+| GET | `/costs/forecast` | `costs.read` | `horizonDays=30` | `{ points: [{ date, amountUsd, lower, upper }], endOfMonthUsd }` |
+| GET | `/billing/statements` | `costs.read` | `accountId, year` | `[{ id, accountId, provider, period: "2026-08", totalUsd, status: "OPEN"\|"FINAL"\|"PAID", lines: [{ service, amountUsd }] }]` (derived from `costs` in MVP) |
+
+### 7.7 Analytics (anomalies & trends)
+
+| Method | Path | perm | Query / Body | `data` |
+|---|---|---|---|---|
+| GET | `/anomalies` | `metrics.read` | `kind, severity, status, resourceId, from, to, page` | `Anomaly[]` + `meta` (cost anomalies = `kind=COST`) |
+| POST | `/anomalies/{id}/acknowledge` | `actions.request` | – | `Anomaly` |
+| GET | `/analytics/trends` | `metrics.read` | `metric, resourceId?, window=7d` | `{ metric, slope, direction: "UP"\|"DOWN"\|"FLAT", changePercent, forecastNext24h: number }` |
+
+### 7.8 Recommendations
+
+| Method | Path | perm | Query / Body | `data` |
+|---|---|---|---|---|
+| GET | `/recommendations` | `recommendations.read` | `status, type, resourceId, provider, page, pageSize` (default sort: newest first) | `Recommendation[]` + `meta` |
+| GET | `/recommendations/{id}` | `recommendations.read` | – | `Recommendation` |
+| POST (201) | `/recommendations/{id}/accept` | `actions.request` | – | `Action`. Recommendation becomes `ACCEPTED` **unless** the resulting action is `BLOCKED` (then it stays `NEW`). Already accepted/dismissed/expired → 409 |
+| POST | `/recommendations/{id}/dismiss` | `actions.request` | `{ reason?: string }` | `Recommendation` (1 h cool-down before the same type is recreated for that resource) |
+
+> Each recommendation already carries `costImpact` and `policyCheck`, so the review screen needs **no extra calls** (except optional AI explanation).
+
+### 7.9 Actions (validate → approve → execute)
+
+| Method | Path | perm | Body | `data` |
+|---|---|---|---|---|
+| POST | `/actions/preview` | `actions.request` | `{ resourceId, type, params }` | `{ costImpact: MoneyImpact, validation: ValidationResult }` — **dry run, changes nothing, writes no audit row** |
+| POST (201) | `/actions` | `actions.request` | `{ resourceId, type, params, recommendationId? }` + header `Idempotency-Key` | `Action` |
+| GET | `/actions` | `actions.read` | `status, resourceId, requestedBy, page, pageSize` (newest first) | `Action[]` + `meta` |
+| GET | `/actions/{id}` | `actions.read` | – | `Action` |
+| POST | `/actions/{id}/approve` | `actions.approve` (and role ≥ `validation.approverRole`) | `{ comment?: string }` | `Action` |
+| POST | `/actions/{id}/reject` | `actions.approve` | `{ reason: string }` | `Action` |
+| POST | `/actions/{id}/cancel` | `actions.request` (requester only) | – | `Action` (only from `PENDING_APPROVAL`) |
+
+`POST /actions` **always returns an `Action`** (after passing input validation and the permission guard). The UI reads `action.status`:
+- `BLOCKED` → show every `validation.checks[].message`; nothing executed.
+- `PENDING_APPROVAL` → show "Waiting for {approverRole}".
+- `EXECUTING` (or `APPROVED` momentarily) → track via WebSocket `action.status_changed` (fallback: poll `GET /actions/{id}` every 3 s).
+
+**Action state machine**
+```
+create ─┬─ BLOCKED                                   (terminal — validation failed)
+        ├─ PENDING_APPROVAL ─ approve → APPROVED → EXECUTING → SUCCEEDED | FAILED
+        │        ├─ reject → REJECTED                (terminal)
+        │        └─ cancel → CANCELLED               (terminal)
+        └─ APPROVED (no approval needed) → EXECUTING → SUCCEEDED | FAILED
+```
+
+### 7.10 Policies & budgets
+
+| Method | Path | perm | Body | `data` |
+|---|---|---|---|---|
+| GET | `/policies` | `policies.read` | – | `Policy[]` |
+| POST (201) | `/policies` | `policies.write` | `Omit<Policy,'id'>` | `Policy` |
+| PATCH | `/policies/{id}` | `policies.write` | partial `Policy` | `Policy` |
+| DELETE | `/policies/{id}` | `policies.write` | – | `{ deleted: true }` |
+| GET | `/budgets` | `policies.read` | – | `Budget[]` |
+| POST (201) | `/budgets` | `budgets.write` | `Omit<Budget,'id'\|'usedUsd'\|'usedPercent'\|'forecastUsd'>` | `Budget` |
+| PATCH | `/budgets/{id}` | `budgets.write` | partial | `Budget` |
+| DELETE | `/budgets/{id}` | `budgets.write` | – | `{ deleted: true }` |
+| GET | `/rbac/roles` | `policies.read` | – | `[{ role: Role, permissions: Permission[] }]` |
+
+### 7.11 Alerts, notifications, settings
+
+| Method | Path | perm | Notes | `data` |
+|---|---|---|---|---|
+| GET | `/alerts` | `metrics.read` | `status, severity, page` | `Alert[]` + `meta` |
+| POST | `/alerts/{id}/acknowledge` · `/alerts/{id}/resolve` | `actions.request` | – | `Alert` |
+| GET | `/notifications` | own | `unread=true, page` (IN_APP inbox) | `Notification[]` + `meta` |
+| POST | `/notifications/{id}/read` | own | – | `Notification` |
+| POST | `/notifications/read-all` | own | – | `{ updated: number }` |
+| GET | `/notification-settings` | own | – | `[{ channel, enabled, events: string[], destination: string \| null }]` |
+| PUT | `/notification-settings` | own | same array | same array |
+| POST | `/notification-settings/test` | own | `{ channel }` | `{ sent: true }` |
+
+`events` values: `ALERT_CREATED`, `RECOMMENDATION_CREATED`, `APPROVAL_REQUESTED`, `ACTION_COMPLETED`, `ACTION_FAILED`, `BUDGET_THRESHOLD`, `COST_ANOMALY`.
+
+### 7.12 AI layer
+
+> **Rule:** the LLM only **explains / summarizes / answers**. It may *suggest* an action, but the user must still go through `/actions` (§7.9). Numbers shown come from the engines, never invented by the LLM.
+
+| Method | Path | perm | Body | `data` |
+|---|---|---|---|---|
+| POST | `/ai/explain` | `ai.use` | `{ entityType: "RECOMMENDATION"\|"ACTION"\|"ANOMALY", entityId }` | `{ explanation: string, keyPoints: string[], generatedAt }` |
+| POST | `/ai/summarize` | `ai.use` | `{ scope: "DASHBOARD"\|"COSTS"\|"RESOURCE", resourceId?, from?, to? }` | `{ summary: string, highlights: string[], generatedAt }` |
+| POST | `/ai/chat` | `ai.use` | `{ message: string, conversationId?: string }` | `{ conversationId, reply: string, suggestedActions: SuggestedAction[] }` |
+
+```ts
+export type SuggestedAction =
+  | { label: string; type: 'OPEN_RESOURCE';       payload: { resourceId: string } }
+  | { label: string; type: 'OPEN_RECOMMENDATION'; payload: { recommendationId: string } }
+  | { label: string; type: 'PREVIEW_ACTION';      payload: { resourceId: string; type: ActionType; params: ProposedAction['params'] } };
+```
+
+### 7.13 Users, audit, system
+
+| Method | Path | perm | `data` |
+|---|---|---|---|
+| GET | `/users` | `users.manage` | `User[]` |
+| POST (201) | `/users` | `users.manage` | body `{ email, name, role, password }` → `User` |
+| PATCH | `/users/{id}` | `users.manage` | body partial `{ name, role, active, password }` → `User` |
+| DELETE | `/users/{id}` | `users.manage` | `{ deleted: true }` |
+| GET | `/audit-logs` | `audit.read` | `[{ id, actor: { id, name } \| null, action, entityType, entityId, before, after, ts }]` + `meta`; query `actorId, entityType, from, to, page` |
+| GET | `/system/health` | none | `{ status: "UP", db: "UP", version: "1.1.0", providerMode: "MOCK" }` (used by Docker healthcheck) |
+| POST | `/system/mock/spike` | `users.manage`, **only when `ENV=dev`** | query `resourceId, multiplier=1.6, minutes=30` → `{ started: true }` |
+
+---
+
+## 8. Worked example — the main workflow with real payloads
+
+Price basis: `t3.medium` = $0.0416/h → **$30.37/instance/month** (×730 h). These numbers are used in seeds and mocks.
+
+**① Backend detects a traffic spike → creates a recommendation** (and pushes WS `anomaly.detected` + `recommendation.created`).
+
+`GET /recommendations/7c1f0a52-3a9b-4c4e-9f10-6d5f0d7f1a11` (as `devops`) →
+```json
+{
+  "success": true,
+  "data": {
+    "id": "7c1f0a52-3a9b-4c4e-9f10-6d5f0d7f1a11",
+    "resourceId": "b4a2e0d1-0c3e-4f6a-8d75-2f7c9a1e5b30",
+    "resourceName": "checkout-api",
+    "provider": "AWS",
+    "type": "SCALE_UP",
+    "status": "NEW",
+    "title": "Scale checkout-api from 4 to 6 instances",
+    "summary": "Traffic is up 62% in the last 15 minutes and CPU is above 80%.",
+    "confidence": 91,
+    "severity": "WARNING",
+    "reason": [
+      { "metric": "request_rate", "observed": 1840.5, "threshold": 1701.9, "window": "15m" },
+      { "metric": "cpu_utilization", "observed": 84.2, "threshold": 75, "window": "10m" }
+    ],
+    "proposedAction": { "type": "SCALE_OUT", "params": { "targetInstances": 6 } },
+    "costImpact": {
+      "currentMonthlyCostUsd": 121.47,
+      "projectedMonthlyCostUsd": 182.21,
+      "deltaMonthlyUsd": 60.74,
+      "deltaPercent": 50.0,
+      "budget": { "name": "Production AWS", "limitUsd": 5000, "usedUsd": 3120.40, "afterChangeUsd": 3181.14, "withinBudget": true }
+    },
+    "policyCheck": {
+      "allowed": true, "requiresApproval": false, "approverRole": null,
+      "checks": [
+        { "name": "PERMISSION", "passed": true, "message": "You can request scaling actions." },
+        { "name": "POLICY", "passed": true, "message": "6 instances is within the safety limit (max 10)." },
+        { "name": "BUDGET", "passed": true, "message": "Stays within the Production AWS budget." },
+        { "name": "APPROVAL", "passed": true, "message": "No manager approval needed (increase is under $100/month)." }
+      ]
+    },
+    "createdAt": "2026-09-19T10:31:00Z",
+    "expiresAt": "2026-09-19T11:31:00Z"
+  }
+}
+```
+
+**② User clicks "Apply"** → `POST /recommendations/{id}/accept` (or `POST /actions`) → `201`:
+```json
+{ "success": true, "data": {
+  "id": "e91d3c7a-58b1-4f0e-a2c4-1b9d6f4a7c22", "resourceId": "b4a2e0d1-0c3e-4f6a-8d75-2f7c9a1e5b30",
+  "resourceName": "checkout-api", "recommendationId": "7c1f0a52-3a9b-4c4e-9f10-6d5f0d7f1a11",
+  "type": "SCALE_OUT", "params": { "targetInstances": 6 },
+  "status": "EXECUTING",
+  "requestedBy": { "id": "3d2f6b1e-7a44-4c0d-9e8b-5a1c2f9d0e33", "name": "Dev Ops" }, "approvedBy": null,
+  "validation": { "allowed": true, "requiresApproval": false, "approverRole": null, "checks": [
+    { "name": "PERMISSION", "passed": true, "message": "You can request scaling actions." },
+    { "name": "POLICY", "passed": true, "message": "6 instances is within the safety limit (max 10)." },
+    { "name": "BUDGET", "passed": true, "message": "Stays within the Production AWS budget." },
+    { "name": "APPROVAL", "passed": true, "message": "No manager approval needed (increase is under $100/month)." } ] },
+  "costImpact": { "currentMonthlyCostUsd": 121.47, "projectedMonthlyCostUsd": 182.21, "deltaMonthlyUsd": 60.74, "deltaPercent": 50.0, "budget": null },
+  "result": null, "error": null, "createdAt": "2026-09-19T10:32:10Z", "executedAt": null
+} }
+```
+
+**③ Blocked** (target 12 > max 10) → `201`, `status: "BLOCKED"`:
+```json
+"validation": { "allowed": false, "requiresApproval": false, "approverRole": null,
+  "checks": [ { "name": "POLICY", "passed": false, "message": "Scaling to 12 instances exceeds the safety limit of 10." } ] }
+```
+
+**④ Needs approval** (target 10 → +$182.21/month > $100 rule, requester is `DEVOPS`) → `status: "PENDING_APPROVAL"`, `validation.requiresApproval: true`, `approverRole: "MANAGER"`, APPROVAL check message: `"Cost increase of $182.21/month needs Manager approval."`. A Manager/Admin then calls `POST /actions/{id}/approve`.
+
+**⑤ Execution finishes** → WS `action.status_changed` → `{ "actionId": "e91d…", "status": "SUCCEEDED", "message": "checkout-api scaled to 6 instances" }`.
+
+---
+
+## 9. WebSocket contract
+
+**URL:** `/ws?token=<accessToken>` (browser builds `ws(s)://<host>/ws` unless `VITE_WS_URL` is set).
+**Auth failure / expired token:** server closes with code **4401** → client refreshes the token (§7.1) and reconnects. The client also reconnects whenever the access token is refreshed.
+
+**Client → server**
+```json
+{ "action": "subscribe",   "channels": ["dashboard", "alerts", "actions", "recommendations", "resource:b4a2e0d1-0c3e-4f6a-8d75-2f7c9a1e5b30"] }
+{ "action": "unsubscribe", "channels": ["resource:b4a2e0d1-0c3e-4f6a-8d75-2f7c9a1e5b30"] }
+{ "action": "ping" }
+```
+
+**Server → client (always this envelope)**
+```json
+{ "event": "metric.updated", "channel": "resource:b4a2e0d1-...", "ts": "2026-09-19T10:31:05Z", "data": { } }
+```
+
+| `event` | Channel | `data` |
+|---|---|---|
+| `metric.updated` | `resource:{id}` / `dashboard` | `{ resourceId, metric, unit, point: { t, v } }` |
+| `resource.health_changed` | `dashboard` | `{ resourceId, from: Health, to: Health }` |
+| `anomaly.detected` | `alerts` | `Anomaly` |
+| `alert.created` / `alert.resolved` | `alerts` | `Alert` |
+| `recommendation.created` | `recommendations` | `Recommendation` |
+| `action.status_changed` | `actions` | `{ actionId, status: ActionStatus, message: string }` |
+| `cost.updated` | `dashboard` | `{ monthToDateUsd, forecastEndOfMonthUsd }` |
+| `notification.created` | *(automatic, per user)* | `Notification` |
+| `pong` | – | `{}` |
+
+**Rules:** server pushes metric events at most every 5 s per resource · client pings every 25 s · client auto-reconnects with backoff (1 s → 30 s) · if WS is down the frontend **falls back to polling every 15 s** · WS is read-only for the UI (all writes go through REST) · `recommendation.created` payload is computed for the receiving user's role (`policyCheck`).
+
+---
+
+## 10. Backend internals (contracts between modules)
+
+### 10.1 Cloud Provider Adapter (implement 4×: `Mock`, `Aws`, `Azure`, `Gcp`)
+
+```python
+# app/adapters/base.py
+class CloudProviderAdapter(ABC):
+    provider: Provider
+    @abstractmethod
+    async def validate_credentials(self, acc: CloudAccountCtx) -> ValidationOutcome: ...
+    @abstractmethod
+    async def list_resources(self, acc) -> list[NormalizedResource]: ...
+    @abstractmethod
+    async def get_metrics(self, acc, external_id: str, metrics: list[str],
+                          start: datetime, end: datetime, interval: Interval) -> list[MetricSeries]: ...
+    @abstractmethod
+    async def get_costs(self, acc, start: date, end: date) -> list[CostRecord]: ...
+    @abstractmethod
+    async def execute(self, acc, external_id: str, action: ProposedAction) -> ProviderOperation: ...
+    @abstractmethod
+    async def get_operation_status(self, acc, operation_id: str) -> OperationStatus: ...
+```
+- Adapters return **normalized** objects (canonical metric names §6.2, enums §6.1). Provider-specific names never leave the adapter.
+- **Blocking SDK calls (boto3 etc.) must run in `asyncio.to_thread(...)`** so the event loop never blocks. Live SDKs are imported lazily inside methods.
+- `AdapterRegistry.get(account)` returns `MockAdapter` when `account.mode == MOCK` **or** `PROVIDER_MODE=mock`.
+- Cost *estimation* is **not** an adapter concern — the Cost Engine does it from `price_catalog` (§10.5).
+- Live mapping (stretch): **AWS** — EC2/Auto Scaling (`set_desired_capacity`), CloudWatch, Cost Explorer; prefer `ASSUME_ROLE` with ExternalId over static keys · **Azure** — VM Scale Sets, Azure Monitor, Cost Management · **GCP** — Managed Instance Groups, Cloud Monitoring, Cloud Billing export (BigQuery).
+
+### 10.2 Ingestion job (APScheduler, in-process)
+- Every `INGESTION_INTERVAL_SECONDS` (default **60**): for each `CONNECTED` account, concurrently (`asyncio.gather`, 10 s timeout per account) → `list_resources` + `get_metrics(last interval)` → upsert `resources`, bulk-insert `metrics` → recompute health → run Analytics → run Recommendation → push WS events.
+- A failing account → `status=ERROR` + one `SYSTEM` alert (deduped). It recovers automatically on the next successful run.
+- Hourly: `get_costs` → upsert `costs`. Nightly: purge raw `metrics` older than 14 days; mark expired recommendations `EXPIRED`.
+- On startup: **recover** actions stuck in `EXECUTING` (resume polling `get_operation_status`).
+
+### 10.3 Analytics Engine (defaults; configurable via settings)
+- **Anomaly** (traffic / latency / error rate / cost): z-score against a trailing baseline (metrics: previous 60 min; cost: previous 14 days); flag when `|z| > 3` for 3 consecutive points, or traffic > +50 % vs baseline. One open anomaly per (resource, metric).
+- **Trend:** linear regression (numpy) over `window`.
+- **Health:** `UNHEALTHY` if `error_rate > 5` or `uptime_percent < 99`; `DEGRADED` if `latency_p95 > 2× baseline` or `cpu > 90`; `UNKNOWN` if no data for 5 min; else `HEALTHY`.
+- **Alerts** are created for: anomalies (`WARNING/CRITICAL`), health → `UNHEALTHY`, budget threshold crossings (`alertThresholds`), failed actions. Dedupe on (source, resource, title) while `OPEN`.
+
+### 10.4 Recommendation Engine rules (defaults)
+
+| Type | Trigger | Proposed action |
+|---|---|---|
+| `SCALE_UP` | cpu > 75 % for 10 min **or** traffic +50 % and latency above baseline | `SCALE_OUT`: +25–50 % instances, rounded up, capped at `maxQuantity` |
+| `SCALE_DOWN` | cpu < 25 % and traffic below baseline for 6 h | `SCALE_IN`: −25 %, never below `minQuantity` (and never below 1) |
+| `RIGHT_SIZE` | p95 cpu < 40 % and memory < 40 % for 7 d | `RESIZE` to the next smaller size in `price_catalog` |
+| `COST_OPTIMIZATION` | idle resource (cpu < 5 % for 3 d) | `STOP` |
+| `RESOURCE_ALLOCATION` | `storage_utilization` > 80 % | `EXPAND_STORAGE` +25 % |
+
+- Only propose actions present in the resource's `supportedActions`.
+- Each recommendation is created **with** `costImpact` (Cost Engine snapshot). `policyCheck` is computed at read time for the viewer.
+- Dedupe: one `NEW` recommendation per (resource, type). Cool-down 1 h after dismiss. Expiry: 1 h (scale types) / 7 d (others).
+- `confidence` (0–100): scaled by how far the metric is past its threshold and how long it persisted; deterministic formula, documented in code.
+
+### 10.5 Cost Engine
+- `hourly = unitPriceUsd × quantity` (from `price_catalog`); `monthly = hourly × 730`. Round to 2 decimals only at the end.
+- Impact by action: **SCALE_OUT/IN** → price(currentSize)×target − current · **RESIZE** → price(targetSize)×quantity − current · **EXPAND_STORAGE** → (target−current GB) × `per_gb_month` · **STOP** → −current compute cost · **START** → +cost.
+- `deltaMonthlyUsd = projected − current` (negative = saving); `deltaPercent = delta / current × 100`.
+- Forecast: month-to-date daily average × remaining days, adjusted by the 7-day trend; ±band from stdev.
+- **Budget usage:** month-to-date cost of resources matching the budget scope. For every matching budget: `afterChange = used + max(delta, 0)`; `MoneyImpact.budget` reports the tightest.
+- All figures are **estimates**; UI labels them "Estimated".
+
+### 10.6 Policy Engine & Action Orchestrator
+
+**Evaluation order (collect ALL check results — don't fail-fast — so the UI can show every reason):**
+```
+1. PERMISSION → user's role has actions.request
+2. POLICY     → built-in bounds (resource min/max quantity, target ≥ 1, action in supportedActions)
+                + every enabled SAFETY_LIMIT policy whose scope matches (ALL apply; most restrictive wins):
+                  maxInstances / minInstances · maxScaleStepPercent · maxCostIncreasePerActionUsd ·
+                  blockedActions · allowedWindows (current time in the window's timezone)
+3. BUDGET     → every matching budget: hardLimit && afterChange > amount → FAIL
+                (soft budget exceeded → passed=true, message starts with "Warning:")
+4. APPROVAL   → every enabled APPROVAL_RULE that matches (costDelta > X OR type in list):
+                requiresApproval = true, approverRole = highest role among matched rules
+                (if requester's role ≥ approverRole → no extra approval needed; check passes with
+                 "You are authorized to approve this yourself.")
+```
+**Outcome**
+```
+any check failed                         → Action.status = BLOCKED
+requiresApproval and requester < role    → PENDING_APPROVAL  (+ notify eligible approvers)
+otherwise                                → APPROVED → EXECUTING
+EXECUTE → adapter.execute(...) in a background asyncio task; poll get_operation_status every 3 s (timeout 5 min)
+FINISH  → SUCCEEDED | FAILED → update resource snapshot → audit_log → notifications → WS event
+```
+- **Re-validate at approve time** (state may have changed). If it now fails → `422 POLICY_VIOLATION` / `BUDGET_EXCEEDED`, action becomes `BLOCKED`.
+- Every state change writes an `audit_logs` row (`before`/`after`).
+- `Idempotency-Key` repeats return the original `Action` (same status code 201).
+- Role hierarchy for "role ≥": `VIEWER < DEVOPS < MANAGER < ADMIN`.
+
+### 10.7 LLM layer
+- Interface `LlmClient.complete(system, messages, tools=None) -> str`.
+- `/ai/explain` and `/ai/summarize`: backend builds a **structured JSON context** (recommendation/metrics/cost snapshot) → LLM writes text. No credentials, no raw PII in prompts.
+- `/ai/chat`: LLM tool-calling with **read-only tools only** (`get_dashboard`, `list_resources`, `get_resource_metrics`, `get_costs`, `list_recommendations`), executed with the **caller's permissions**. **No write tools exist.** It may return `suggestedActions`; the user still goes through §7.9.
+- Timeout 15 s. On any failure return a deterministic template explanation — the feature degrades, it never errors the page.
+- Rate limit 20 req/min/user (in-memory) → `429 RATE_LIMITED`.
+
+### 10.8 Notification Service
+```python
+class NotificationChannel(ABC):
+    channel: Channel
+    async def send(self, user: User, payload: NotificationPayload) -> None: ...
+```
+`InAppChannel` (DB row + WS push), `EmailChannel` (aiosmtplib), `WhatsAppChannel` (Meta Cloud API or Twilio via httpx). Channels without configured credentials **log the message instead of failing** (mock delivery). Fan-out respects each user's `notification_settings`. Optional integrations (MCP, Slack, …) implement the same interface later.
+
+---
+
+## 11. Mock mode & seed data (nothing blocks on real cloud accounts)
+
+- `PROVIDER_MODE=mock` (default). `MockAdapter` is a **pure, deterministic function** `value = f(resourceSeed, metric, timestamp)`:
+  `base × dailyCurve(hour) × weeklyFactor(dow) × (1 + noise(seed, minuteBucket)) × spikeMultiplier(t)` — so history, live data and seed backfill are always consistent.
+- **Scripted scenario:** 2 minutes after backend startup, `checkout-api` traffic ×1.6 for 30 min (+ CPU rises accordingly) → the anomaly + `SCALE_UP` recommendation appear on their own. `POST /system/mock/spike` (dev only) triggers it on demand. Executing a scale action in mock mode updates `quantity` (and the spike then relaxes CPU).
+- **Seed** (`python -m app.seed`; runs only if `SEED_ON_START=true` **and** the `users` table is empty): 7 days of metrics at 5-min granularity, 30 days of costs, price catalog, and:
+
+**Users** (password `Passw0rd!` — dev only; set `SEED_ON_START=false` in real deployments): `admin@cloudops.dev`, `manager@cloudops.dev`, `devops@cloudops.dev` (name "Dev Ops"), `viewer@cloudops.dev`.
+
+**Cloud accounts:** `AWS Production` (AWS), `Azure Production` (AZURE), `GCP Production` (GCP) — all `MOCK`.
+
+**Resources**
+
+| Name | Provider | Type | Size | Qty (min–max) | supportedActions |
+|---|---|---|---|---|---|
+| checkout-api *(id b4a2e0d1-0c3e-4f6a-8d75-2f7c9a1e5b30)* | AWS | COMPUTE | t3.medium | 4 (2–10) | SCALE_OUT, SCALE_IN, RESIZE, STOP, START |
+| worker-pool | AWS | COMPUTE | t3.large | 3 (1–8) | SCALE_OUT, SCALE_IN, RESIZE |
+| orders-db | AWS | DATABASE | db.r5.large | 1 (1–1) | RESIZE, EXPAND_STORAGE |
+| assets-bucket | AWS | STORAGE | s3-standard | 1 (1–1) | *(none)* |
+| web-alb | AWS | LOAD_BALANCER | alb | 1 (1–1) | *(none)* |
+| billing-api | AZURE | COMPUTE | Standard_D2s_v3 | 3 (2–8) | SCALE_OUT, SCALE_IN, RESIZE |
+| aks-workers | AZURE | CONTAINER | Standard_D4s_v3 | 5 (3–12) | SCALE_OUT, SCALE_IN |
+| reports-db | AZURE | DATABASE | GP_Gen5_4 | 1 (1–1) | RESIZE, EXPAND_STORAGE |
+| media-storage | AZURE | STORAGE | blob-hot | 1 (1–1) | *(none)* |
+| search-svc | GCP | COMPUTE | e2-standard-2 | 2 (1–6) | SCALE_OUT, SCALE_IN, RESIZE |
+| gke-batch | GCP | CONTAINER | n2-standard-4 | 3 (1–10) | SCALE_OUT, SCALE_IN |
+| cache-redis | GCP | DATABASE | m1-standard | 1 (1–1) | RESIZE |
+| gcs-backups | GCP | STORAGE | gcs-nearline | 1 (1–1) | *(none)* |
+
+**Policies:** (1) *Global safety limits* — `SAFETY_LIMIT`, scope `{}`, `{ maxInstances: 10, minInstances: 1, maxScaleStepPercent: 100, maxCostIncreasePerActionUsd: 500 }` · (2) *Large spend needs approval* — `APPROVAL_RULE`, `{ requireApprovalWhen: { costDeltaMonthlyUsdGt: 100 }, approverRole: "MANAGER" }` · (3) *Never stop databases* — `SAFETY_LIMIT`, scope `{ resourceType: "DATABASE" }`, `{ blockedActions: ["STOP"] }`.
+**Budgets:** *Production AWS* (`PROVIDER`/`AWS`, $5,000, thresholds 50/80/100, soft) · *Overall cloud spend* (`GLOBAL`, $15,000, hard limit).
+
+**Frontend mocks** (MSW) return the same shapes and implement the same three outcomes: target > 10 → `BLOCKED`; cost delta > $100 and role < MANAGER → `PENDING_APPROVAL`; otherwise `EXECUTING` → `SUCCEEDED` after ~3 s (via the fake socket). Mock login supports all four seeded users so role-based UI can be tested.
+
+---
+
+## 12. RBAC matrix
+
+| Permission | VIEWER | DEVOPS | MANAGER | ADMIN |
+|---|:-:|:-:|:-:|:-:|
+| `resources.read` `metrics.read` `costs.read` `recommendations.read` `actions.read` `policies.read` `ai.use` | ✅ | ✅ | ✅ | ✅ |
+| `actions.request` (create/preview actions, accept/dismiss recommendations, acknowledge alerts) | ❌ | ✅ | ✅ | ✅ |
+| `actions.approve` · `budgets.write` · `audit.read` | ❌ | ❌ | ✅ | ✅ |
+| `policies.write` · `accounts.manage` · `users.manage` | ❌ | ❌ | ❌ | ✅ |
+
+Backend enforces (403). Frontend hides/disables UI using `user.permissions` — **never rely on hiding alone**. Notification settings and inbox are always the caller's own.
+
+---
+
+## 13. Frontend contract
+
+### 13.1 Pages → APIs they call
+
+| Route | Purpose | REST calls | WS channels |
+|---|---|---|---|
+| `/login` | Sign in | `POST /auth/login` | – |
+| `/dashboard` | KPIs, alerts, top recommendations | `GET /dashboard/overview`, `GET /alerts?status=OPEN&pageSize=5`, `GET /recommendations?status=NEW&pageSize=5`, `GET /metrics/timeseries?metric=request_rate` | `dashboard`, `alerts`, `recommendations` |
+| `/monitoring` | Traffic, latency, storage, uptime, health | `GET /metrics/summary`, `GET /metrics/timeseries` (one per chart) | `dashboard` |
+| `/resources` | Filterable table | `GET /resources` | `dashboard` |
+| `/resources/:id` | Metrics, health, cost, recs, actions, **Scale** modal | `GET /resources/{id}`, `/metrics`, `/health`, `/cost`, `GET /recommendations?resourceId=`, `GET /actions?resourceId=`, `POST /actions/preview`, `POST /actions` | `resource:{id}`, `actions` |
+| `/costs` | Cost analysis & billing | `GET /costs/summary`, `/timeseries`, `/breakdown`, `/forecast`, `GET /anomalies?kind=COST`, `GET /billing/statements` | `dashboard` |
+| `/recommendations` | List + review drawer | `GET /recommendations`, `POST /recommendations/{id}/accept`, `/dismiss`, `POST /ai/explain` | `recommendations` |
+| `/approvals` | Pending + history | `GET /actions?status=PENDING_APPROVAL`, `POST /actions/{id}/approve`, `/reject`, `GET /actions` | `actions` |
+| `/policies` | Policies + budgets CRUD | `GET/POST/PATCH/DELETE /policies`, `/budgets`, `GET /rbac/roles` | – |
+| `/accounts` | Connect clouds | `GET/POST/DELETE /cloud-accounts`, `POST /cloud-accounts/{id}/sync` | – |
+| `/alerts` | Alert center | `GET /alerts`, `POST /alerts/{id}/acknowledge`, `/resolve` | `alerts` |
+| `/settings/notifications` | Channels & events | `GET/PUT /notification-settings`, `POST /notification-settings/test` | – |
+| `/audit` | Audit trail | `GET /audit-logs` | – |
+| `/admin/users` | User management (ADMIN) | `GET/POST/PATCH/DELETE /users` | – |
+| *(global)* header bell | Notifications | `GET /notifications?unread=true`, `POST /notifications/{id}/read`, `/read-all` | automatic |
+| *(global)* AI panel | Ask / summarize | `POST /ai/chat`, `POST /ai/summarize` | – |
+
+### 13.2 Frontend rules
+1. **One API client** (`api/client.ts`): base URL from `VITE_API_BASE_URL` (default `/api/v1`), adds the bearer token, unwraps the envelope, throws typed `ApiError { code, message, details }`, on `401` tries `/auth/refresh` **once** (single in-flight refresh shared by all requests) then redirects to `/login`.
+2. All API data typed with `api/types.ts` (copy of §6). No ad-hoc interfaces for API data.
+3. Data fetching via TanStack Query. Query keys: `['dashboard']`, `['resources', filters]`, `['resource', id]`, `['metrics', id, params]`, `['costs', ...]`, `['recommendations', filters]`, `['actions', filters]`, `['alerts']`, `['notifications']`.
+4. **WebSocket → cache mapping**
+
+   | Event | Cache action |
+   |---|---|
+   | `metric.updated` | append point to matching `['metrics', …]` series (drop points outside the window) |
+   | `resource.health_changed` | invalidate `['resources']`, `['resource', id]`, `['dashboard']` |
+   | `alert.*`, `anomaly.detected` | invalidate `['alerts']`, `['dashboard']` (+ toast for CRITICAL) |
+   | `recommendation.created` | invalidate `['recommendations']`, `['dashboard']` + toast |
+   | `action.status_changed` | invalidate `['actions']`, `['action', id]`, `['resource', resourceId]` + toast |
+   | `cost.updated` | patch/invalidate `['dashboard']`, `['costs']` |
+   | `notification.created` | invalidate `['notifications']` |
+
+5. Every screen has **loading, empty and error** states.
+6. **Scale / Apply flow (must follow exactly):** show only `resource.supportedActions` → modal (target instances / size / storage; clamp to `minQuantity`–`maxQuantity`) → `POST /actions/preview` (debounced) → show cost delta, budget bar and each `validation.checks[].message` → if `allowed=false` disable "Apply" and show reasons → confirm dialog → `POST /actions` with a fresh `Idempotency-Key` (uuid) → render by `Action.status` (§7.9) with live updates.
+7. Colors: severity `INFO` blue, `WARNING` amber, `CRITICAL` red · health `HEALTHY` green, `DEGRADED` amber, `UNHEALTHY` red · cost saving (negative delta) green, increase red. Money via `Intl.NumberFormat('en-US', {style:'currency', currency:'USD'})`; label projections "Estimated".
+8. Never call cloud providers or the LLM from the browser. Tokens: access token in memory (Zustand); refresh token in `localStorage` (documented MVP trade-off).
+9. Env: `VITE_API_BASE_URL` (default `/api/v1`), `VITE_WS_URL` (optional; default derived from `window.location`), `VITE_USE_MOCKS=true|false`. In mock mode the WS client is replaced by `fakeSocket.ts` emitting scripted events (spike → recommendation → action status changes).
+10. Dev proxy (`vite.config.ts`): `server.proxy = { '/api': 'http://localhost:8000', '/ws': { target: 'ws://localhost:8000', ws: true } }`.
+11. Route guards: unauthenticated → `/login`; pages/buttons gated by `user.permissions`.
+
+---
+
+## 14. Backend rules
+1. Layering: `api/v1/*` routers are thin (parse → call service → return schema); business logic lives in `services/`; DB access via SQLAlchemy async sessions injected with `Depends`. Engines (`cost`, `policy`, `analytics`, `recommendation`) are **pure/async services callable without HTTP** so they are unit-testable.
+2. Response models: `ApiResponse[T]` / `PagedResponse[T]` from §4.3; schemas inherit `CamelModel`; money = `float` rounded to 2 decimals; datetimes tz-aware UTC.
+3. All errors go through `ApiError` + the global handlers → §4.1 envelope. Never return raw FastAPI validation output.
+4. Passwords: **argon2** (`argon2-cffi`) — not passlib/bcrypt (version-compat issues). JWT via **PyJWT**.
+5. Credentials: encrypt with Fernet (`ENCRYPTION_KEY`); **never** return or log them; decrypt only inside adapter calls.
+6. Every write to actions / policies / budgets / accounts / users creates an `audit_logs` row.
+7. Migrations only through **Alembic**; no manual DB edits. Config normalizes `postgres://` and `postgresql://` URLs to `postgresql+asyncpg://` (managed hosts hand out the plain form).
+8. **Run exactly ONE Uvicorn worker** in the MVP: the scheduler and the WebSocket hub are in-process. (Scaling out later = move jobs to a separate worker process and the hub to Redis pub/sub — out of scope now.)
+9. Blocking calls (cloud SDKs, SMTP libs) → `asyncio.to_thread`. Timeouts on every outbound call.
+10. Timezone: store and return UTC only. Logging: structured, no secrets, no tokens.
+11. **Minimum tests (pytest):** policy engine (each rule), cost engine (impact + budget), orchestrator (BLOCKED / PENDING_APPROVAL / EXECUTING→SUCCEEDED / re-validation), recommendation rules, envelope/error shape, RBAC 403s.
+
+---
+
+## 15. Configuration & deployment
+
+### 15.1 Environment variables (`.env.example`)
+```
+# --- general ---
+ENV=dev                          # dev | prod
+DB_PASSWORD=change_me
+DATABASE_URL=postgresql+asyncpg://cloudops:change_me@db:5432/cloudops
+JWT_SECRET=                      # openssl rand -hex 32
+ENCRYPTION_KEY=                  # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+CORS_ORIGINS=http://localhost:5173   # only needed when frontend and API are on different origins
+SEED_ON_START=true               # false in real deployments
+# --- cloud ---
+PROVIDER_MODE=mock               # mock | live
+INGESTION_INTERVAL_SECONDS=60
+# --- LLM ---
+LLM_PROVIDER=anthropic
+LLM_API_KEY=
+LLM_MODEL=
+# --- notifications (optional; unset = log only) ---
+SMTP_HOST=  SMTP_PORT=587  SMTP_USER=  SMTP_PASSWORD=  SMTP_FROM=
+WHATSAPP_TOKEN=  WHATSAPP_PHONE_NUMBER_ID=
+```
+Frontend build-time: `VITE_API_BASE_URL=/api/v1`, `VITE_WS_URL=` (blank = same origin), `VITE_USE_MOCKS=false`.
+
+### 15.2 Docker
+
+**`docker-compose.yml`**
+```yaml
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: cloudops
+      POSTGRES_USER: cloudops
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U cloudops"], interval: 5s, retries: 10 }
+  backend:
+    build: ./backend
+    env_file: .env
+    depends_on: { db: { condition: service_healthy } }
+    healthcheck: { test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/api/v1/system/health')"], interval: 10s, retries: 10 }
+  frontend:
+    build: ./frontend
+    ports: ["80:80"]
+    depends_on: [backend]
+volumes: { pgdata: {} }
+```
+
+**`backend/Dockerfile`**
+```dockerfile
+FROM python:3.12-slim
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ARG INSTALL_LIVE=false
+COPY requirements.txt requirements-live.txt ./
+RUN pip install --no-cache-dir -r requirements.txt \
+ && if [ "$INSTALL_LIVE" = "true" ]; then pip install --no-cache-dir -r requirements-live.txt; fi
+COPY . .
+EXPOSE 8000
+CMD ["sh", "-c", "alembic upgrade head && python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"]
+```
+`requirements.txt`: `fastapi, uvicorn[standard], sqlalchemy[asyncio]>=2, asyncpg, alembic, pydantic>=2, pydantic-settings, PyJWT, argon2-cffi, cryptography, apscheduler>=3.10,<4, httpx, numpy, anthropic, aiosmtplib, pytest, pytest-asyncio` (pin exact versions when generating).
+`requirements-live.txt`: `boto3, azure-identity, azure-mgmt-monitor, azure-mgmt-compute, azure-mgmt-costmanagement, google-cloud-monitoring, google-cloud-compute`.
+
+**`frontend/Dockerfile`** (multi-stage) + **`frontend/nginx.conf`** (serves the SPA and proxies API/WS → single origin)
+```dockerfile
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+FROM nginx:alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+```
+```nginx
+server {
+  listen 80;
+  root /usr/share/nginx/html;
+  index index.html;
+  location /api/ { proxy_pass http://backend:8000; proxy_set_header Host $host;
+                   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                   proxy_set_header X-Forwarded-Proto $scheme; }
+  location /ws   { proxy_pass http://backend:8000; proxy_http_version 1.1;
+                   proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";
+                   proxy_read_timeout 3600s; }
+  location /     { try_files $uri /index.html; }
+}
+```
+
+### 15.3 Run & deploy
+
+| Goal | How |
+|---|---|
+| Everything locally | `cp .env.example .env` → fill secrets → `docker compose up --build` → open `http://localhost` (API docs: `/api/docs`) |
+| Backend only (dev) | start Postgres (`docker compose up db`) → `cd backend && pip install -r requirements.txt && alembic upgrade head && python -m app.seed && uvicorn app.main:app --reload --port 8000` |
+| Frontend only (dev) | `cd frontend && npm i && npm run dev` (proxy → `:8000`). With no backend: `VITE_USE_MOCKS=true npm run dev` |
+| **Deploy option A (simplest)** | Any VPS / EC2 / Droplet: install Docker → clone repo → set `.env` (`ENV=prod`, strong secrets, `SEED_ON_START=false` after first boot) → `docker compose up -d --build`. Add HTTPS with Caddy in front (`caddy reverse-proxy --from yourdomain.com --to localhost:80`) or Cloudflare |
+| Deploy option B (managed) | **Render/Railway**: Postgres add-on + backend as a Docker service (`INSTALL_LIVE` optional) + frontend as a static site (rewrite `/*` → `/index.html`). Because origins differ: set `VITE_API_BASE_URL=https://<api-host>/api/v1`, `VITE_WS_URL=wss://<api-host>/ws`, backend `CORS_ORIGINS=https://<frontend-host>` |
+| Demo warning | Free tiers that **sleep** stop the ingestion scheduler and drop WebSockets — use an always-on instance/VM for demos |
+
+---
+
+## 16. Build phases & Definition of Done
+
+### 16.1 Suggested phases (both sides in parallel)
+
+| Phase | Backend | Frontend |
+|---|---|---|
+| 1 · Skeleton | Compose + Alembic + config + envelope/errors + auth + RBAC + seed + `/system/health` | Vite app, layout, router, API client, MSW mocks, login + role gating |
+| 2 · Read APIs | MockAdapter, ingestion job, resources, metrics, costs, dashboard, billing | Dashboard, Monitoring, Resources, Resource detail, Costs |
+| 3 · The workflow | Analytics, recommendation, policy, cost impact, orchestrator, actions, WS hub | Recommendations, Scale flow, Approvals, live updates |
+| 4 · Extras | Policies/budgets CRUD, alerts, notifications, AI layer, audit | Policies, Accounts, Alerts, Notification settings, AI panel, Audit |
+| 5 · Stretch | **One live adapter (AWS via boto3)**; Azure/GCP stay mock but implement the same interface | Polish, empty states, responsive |
+
+### 16.2 Backend done when
+- [ ] `docker compose up` → db + backend healthy; migrations + seed applied
+- [ ] Every endpoint in §7 returns the exact shape (verified against §8 examples and `/api/docs`)
+- [ ] Envelope/error shape identical everywhere (incl. 400/401/403/404/500)
+- [ ] Mock spike creates a recommendation within ~2 min of startup
+- [ ] Orchestrator yields `BLOCKED`, `PENDING_APPROVAL`, and `EXECUTING → SUCCEEDED` (tests pass)
+- [ ] WebSocket events in §9 fire; 4401 close on bad token
+- [ ] Exactly 1 worker; secrets never logged/returned
+
+### 16.3 Frontend done when
+- [ ] All routes in §13.1 work with `VITE_USE_MOCKS=true` **and** with the real backend by only flipping env
+- [ ] Role-based UI verified with all 4 seeded users
+- [ ] Scale flow (§13.2 #6) handles allowed / blocked / needs-approval
+- [ ] Loading / empty / error states on every screen; WS fallback to polling works
+
+### 16.4 Integration smoke test (run in order)
+1. Login as `devops@cloudops.dev` → dashboard loads with live KPIs
+2. Wait for (or trigger) the spike → recommendation appears live + toast
+3. Open review → cost impact, policy checks, AI explanation shown
+4. Apply (4 → 6) → status `EXECUTING → SUCCEEDED` live; audit entry exists; in-app notification arrives
+5. Scale `checkout-api` to **12** → `BLOCKED` with the safety-limit message
+6. Scale `checkout-api` to **10** → `PENDING_APPROVAL` → login as `manager@cloudops.dev` → approve → succeeds
+7. `viewer@cloudops.dev`: no Apply/Approve buttons; calling the API directly returns `403 FORBIDDEN`
+8. Kill the WebSocket (stop the backend briefly) → UI falls back to polling and recovers on reconnect
+
+---
+
+## 17. Out of scope for MVP (don't build unless asked)
+Terraform apply, real invoice ingestion, multi-tenant orgs, SSO, Kubernetes-internal autoscaling, auto-apply of recommendations without a human, horizontal backend scaling (Redis pub/sub), Azure/GCP live adapters.
+
+---
+
+## 18. Change control
+- Any API/type/enum change → edit **this file first**, bump the version, add a changelog line, then tell every side (re-share the file with each AI).
+- After freeze only **additive** changes (new optional fields/endpoints) are allowed; renames/removals need both sides to agree.
+- Missing/ambiguous contract detail → append it to `docs/CONTRACT_GAPS.md` (what, who found it, proposed answer); resolve it here, then delete the gap.
+
+**Changelog**
+- `1.1.0` — **Stack change:** Spring Boot → **FastAPI + PostgreSQL**, Next.js → **React + Vite**; single-origin Docker deployment (nginx proxy) added (§15); backend port 8000; types file now `frontend/src/api/types.ts`. **Contract fixes:** added `Resource.supportedActions`, `CloudCredentials`, `Budget.forecastUsd`, `SuggestedAction` payloads, `actions.read` permission (removed `notifications.manage`; users manage their own notification settings); removed `BUDGET_GUARD` policy type (budgets carry `hardLimit`); `recommendations.policyCheck` is computed per viewer, not stored; dismiss/acknowledge now need `actions.request`; `logout` takes `{refreshToken}`; refresh-token rotation; metric applicability + downsampling rules; explicit 201 rules; WS 4401 handling; state machines; seed data table; corrected example numbers.
+- `1.0.0` — Initial contract.
+
+---
+
+## 19. Role prompts (paste at the top of each AI session, together with this file)
+
+**Frontend AI**
+> You are building the CloudOps **frontend** only: React 18 + TypeScript + Vite, Tailwind + shadcn/ui, React Router, TanStack Query, Recharts. Read ARCHITECTURE.md fully. Follow §4, §6, §7–§9, §12 and §13 exactly — do not invent endpoints, fields or enums. Build with MSW mocks first (`VITE_USE_MOCKS=true`) using the JSON and seed data in §8/§11, including the three action outcomes; it must then work against the real backend by changing env vars only. If something is missing or ambiguous, write it down as "CONTRACT GAP" instead of guessing.
+
+**Backend AI**
+> You are building the CloudOps **backend** only: Python 3.12 + FastAPI + SQLAlchemy 2 (async) + PostgreSQL + Alembic. Read ARCHITECTURE.md fully. Implement §4–§12, §14 and §15 exactly: same paths, JSON shapes (camelCase via `CamelModel`), enums, error codes, envelope and WebSocket events. Start with Docker Compose, migrations, auth/RBAC, seed data and `MockAdapter` so the frontend can integrate immediately. One Uvicorn worker only. If something is missing or ambiguous, write it down as "CONTRACT GAP" instead of guessing.
+
+**Cloud Adapter / Data AI**
+> You are building only `backend/app/adapters/*` and the deterministic mock data generator (§10.1, §10.2, §11). Return normalized objects using the canonical metric names in §6.2. Mock mode must be fully functional first (including the scripted traffic spike); the AWS live adapter (boto3, run via `asyncio.to_thread`) comes after; Azure/GCP implement the same interface in mock form.
