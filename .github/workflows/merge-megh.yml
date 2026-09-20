@@ -1,0 +1,39 @@
+name: Merge Megh into Main
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch branches
+        run: |
+          git fetch origin main
+          git fetch origin Megh
+
+      - name: Checkout main
+        run: |
+          git checkout -B main origin/main
+
+      - name: Merge Megh
+        run: |
+          git merge origin/Megh --allow-unrelated-histories -m "Merge Megh into main"
+
+      - name: Push merged main
+        run: |
+          git push origin main
