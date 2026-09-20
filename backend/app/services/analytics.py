@@ -44,3 +44,57 @@ class AnalyticsService:
 
     def evaluate_trend(self, metric: str, values: Sequence[float], timestamps_hours: Sequence[float]) -> TrendCalcResult:
         return compute_trend(metric, values, timestamps_hours)
+    def evaluate_budget_thresholds(
+        self,
+        amount_usd: float,
+        used_usd: float,
+        alert_thresholds: Sequence[int],
+    ) -> list[int]:
+        """Return budget thresholds reached by current usage."""
+        if amount_usd <= 0:
+            return []
+
+        usage_percent = (float(used_usd) / float(amount_usd)) * 100.0
+
+        return [
+            threshold
+            for threshold in sorted(set(alert_thresholds))
+            if 0 <= threshold <= 100 and usage_percent >= threshold
+        ]
+    async def raise_budget_threshold_alerts(
+        self,
+        db: Any,
+        budget_name: str,
+        amount_usd: float,
+        used_usd: float,
+        alert_thresholds: Sequence[int],
+        month: str | None = None,
+    ) -> list[int]:
+        """Raise alerts for budget thresholds reached this month."""
+        from app.ports import use
+
+        crossed = self.evaluate_budget_thresholds(
+            amount_usd=amount_usd,
+            used_usd=used_usd,
+            alert_thresholds=alert_thresholds,
+        )
+
+        if not crossed:
+            return []
+
+        month_label = month or datetime.now(timezone.utc).strftime("%Y-%m")
+        alerts = use("alerts")
+
+        for threshold in crossed:
+            await alerts.raise_alert(
+                db,
+                severity="WARNING" if threshold < 100 else "CRITICAL",
+                source="BUDGET_THRESHOLD",
+                title=f"{budget_name} budget threshold {threshold}% ({month_label})",
+                message=(
+                    f"{budget_name} has reached the {threshold}% "
+                    f"monthly budget threshold."
+                ),
+            )
+
+        return crossed

@@ -5,7 +5,7 @@ Wraps cost_calc.py for action impact estimation and budget usage calculations.
 Derived from ARCHITECTURE.md §10.5.
 """
 
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 from uuid import UUID
 from app.ports import CostEnginePort, BudgetUsage, provide
 from app.services.cost_calc import calculate_cost_impact, MoneyImpactCalc
@@ -60,6 +60,19 @@ class CostService(CostEnginePort):
     async def budget_usage(self, db: Any, budget_id: UUID) -> BudgetUsage:
         """Calculate month-to-date cost used and forecast for a budget."""
         return BudgetUsage(used_usd=477.52, forecast_usd=920.00)
+
+    async def forecast_costs(
+        self,
+        daily_amounts: Sequence[float],
+        horizon_days: int,
+    ):
+        """Generate additive C3 cost forecast points."""
+        from app.services.cost_forecast_c3 import forecast_costs
+
+        return forecast_costs(
+            daily_amounts=daily_amounts,
+            horizon_days=horizon_days,
+        )
 
 
 # Provide "cost_engine" port automatically on import
