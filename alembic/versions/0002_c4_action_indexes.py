@@ -10,9 +10,26 @@ depends_on = None
 def upgrade():
     op.execute("DROP INDEX IF EXISTS uq_recommendations_resource_type")
     op.execute("ALTER TABLE recommendations DROP CONSTRAINT IF EXISTS uq_recommendations_resource_type")
-    op.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_actions_resource_inflight ON actions (resource_id) WHERE status IN ('PENDING_APPROVAL','APPROVED','EXECUTING')")
+
+    op.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_recommendations_resource_type
+        ON recommendations (resource_id, type)
+        WHERE status = 'NEW'
+    """)
+    op.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_actions_resource_inflight
+        ON actions (resource_id)
+        WHERE status IN ('PENDING_APPROVAL','APPROVED','EXECUTING')
+    """)
+    op.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_anomalies_open
+        ON anomalies (coalesce(resource_id, '00000000-0000-0000-0000-000000000000'), metric)
+        WHERE status = 'OPEN'
+    """)
 
 
 def downgrade():
+    op.execute("DROP INDEX IF EXISTS uq_anomalies_open")
     op.execute("DROP INDEX IF EXISTS uq_actions_resource_inflight")
+    op.execute("DROP INDEX IF EXISTS uq_recommendations_resource_type")
     op.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_recommendations_resource_type ON recommendations (resource_id, type)")
