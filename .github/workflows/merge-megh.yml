@@ -32,7 +32,13 @@ jobs:
 
       - name: Merge Megh
         run: |
-          git merge origin/Megh --allow-unrelated-histories -m "Merge Megh into main"
+          git merge origin/Megh --allow-unrelated-histories -m "Merge Megh into main" || true
+
+      - name: Keep main README
+        run: |
+          git checkout --ours README.md
+          git add README.md
+          git commit -m "Resolve README conflict using main" || true
 
       - name: Push merged main
         run: |
