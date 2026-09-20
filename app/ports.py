@@ -1,0 +1,63 @@
+from __future__ import annotations
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import date, datetime
+from typing import TYPE_CHECKING, Any, Literal, Protocol
+from uuid import UUID
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from app.schemas.common import MoneyImpact, ProposedAction, ValidationResult
+OpState=Literal['RUNNING','SUCCEEDED','FAILED']
+@dataclass
+class ValidationOutcome: ok:bool; message:str=''
+@dataclass
+class NormalizedResource:
+    external_id:str; name:str; type:str; region:str; status:str; size:str; quantity:int; min_quantity:int; max_quantity:int; supported_actions:list[str]; storage_gb:float|None=None; tags:dict[str,str]=field(default_factory=dict)
+@dataclass
+class MetricSeriesData: metric:str; unit:str; points:list[tuple[datetime,float]]
+@dataclass
+class CostRecord: service:str; usage_date:date; amount_usd:float; resource_external_id:str|None=None; tags:dict[str,str]=field(default_factory=dict)
+@dataclass
+class ProviderOperation: operation_id:str; state:OpState; message:str=''
+@dataclass
+class BudgetUsage: used_usd:float; forecast_usd:float
+class CloudProviderAdapter(ABC):
+    provider:str
+    @abstractmethod
+    async def validate_credentials(self,acc:Any)->ValidationOutcome: ...
+    @abstractmethod
+    async def list_resources(self,acc:Any)->list[NormalizedResource]: ...
+    @abstractmethod
+    async def get_metrics(self,acc:Any,external_id:str,metrics:list[str],start:datetime,end:datetime,interval:str)->list[MetricSeriesData]: ...
+    @abstractmethod
+    async def get_costs(self,acc:Any,start:date,end:date)->list[CostRecord]: ...
+    @abstractmethod
+    async def execute(self,acc:Any,external_id:str,action_type:str,params:dict)->ProviderOperation: ...
+    @abstractmethod
+    async def get_operation_status(self,acc:Any,operation_id:str)->ProviderOperation: ...
+class CostEnginePort(Protocol):
+    async def estimate_impact(self,db:AsyncSession,resource_id:UUID,action:ProposedAction)->MoneyImpact: ...
+    async def budget_usage(self,db:AsyncSession,budget_id:UUID)->BudgetUsage: ...
+class IngestionPort(Protocol):
+    async def sync_account(self,account_id:UUID)->None: ...
+    async def refresh_resource(self,resource_id:UUID)->None: ...
+class AdapterPort(Protocol):
+    def get(self,account:Any)->CloudProviderAdapter: ...
+class PolicyPort(Protocol):
+    async def check_limits(self,db:AsyncSession,resource_id:UUID,action:ProposedAction,impact:MoneyImpact)->ValidationResult: ...
+class AlertsPort(Protocol):
+    async def raise_alert(self,db:AsyncSession,*,severity:str,source:str,title:str,message:str,resource_id:UUID|None=None,anomaly_id:UUID|None=None)->UUID|None: ...
+    async def resolve_alerts(self,db:AsyncSession,*,anomaly_id:UUID|None=None,resource_id:UUID|None=None,source:str|None=None)->int: ...
+class NotifierPort(Protocol):
+    async def notify_event(self,db:AsyncSession,event:str,*,title:str,body:str,entity_type:str|None=None,entity_id:str|None=None)->None: ...
+class HubPort(Protocol):
+    def has_subscribers(self,channel:str)->bool: ...
+    async def publish(self,event:str,channel:str,data:dict)->None: ...
+    async def publish_user(self,user_id:UUID,event:str,data:dict)->None: ...
+class AuditPort(Protocol):
+    async def write(self,db:AsyncSession,*,actor_id:UUID|None,action:str,entity_type:str,entity_id:UUID|str|None,before:dict|None=None,after:dict|None=None)->None: ...
+_impl:dict[str,Any]={}
+def provide(name:str,impl:Any)->None: _impl[name]=impl
+def use(name:str)->Any:
+    from app.ports_stubs import STUBS
+    return _impl.get(name) or STUBS[name]
