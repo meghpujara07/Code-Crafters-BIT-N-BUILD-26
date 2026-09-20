@@ -1,0 +1,32 @@
+/* CloudOps — Global Styles */
+@import './styles/theme.css';
+
+#root {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Focus visible outline for all interactive elements */
+:focus:not(:focus-visible) {
+    outline: none;
+}
+
+::selection {
+    background: var(--accent-soft);
+    color: var(--text-primary);
+}
+
+/* Code / monospace */
+code,
+pre {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.9em;
+}
+
+code {
+    background: var(--surface-secondary);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+}
