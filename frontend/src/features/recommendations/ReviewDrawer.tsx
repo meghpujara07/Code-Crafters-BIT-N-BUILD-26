@@ -306,7 +306,7 @@ export function ReviewDrawer({
                                         padding: '10px 14px',
                                         borderRadius: 'var(--radius-md)',
                                         background: 'var(--surface-secondary)',
-                                        border: `1px solid ${c.passed ? 'rgba(53, 211, 153, 0.25)' : 'rgba(242, 109, 125, 0.25)'}`,
+                                        border: `1px solid ${c.passed ? 'rgba(52, 211, 153, 0.25)' : 'rgba(255, 77, 106, 0.25)'}`,
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: 12,

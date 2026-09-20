@@ -30,7 +30,7 @@
     width: 700px;
     height: 500px;
     background: radial-gradient(ellipse at center,
-            rgba(124, 106, 246, 0.08) 0%,
+            rgba(56, 189, 248, 0.08) 0%,
             rgba(67, 56, 202, 0.03) 40%,
             transparent 70%);
 }
@@ -72,7 +72,7 @@
     width: 44px;
     height: 44px;
     border-radius: 12px;
-    background: linear-gradient(135deg, var(--accent) 0%, var(--royal-indigo) 100%);
+    background: linear-gradient(135deg, var(--accent) 0%, #009B7D 100%);
     color: white;
     margin-bottom: 16px;
     position: relative;
@@ -129,8 +129,8 @@
 .login-error {
     padding: 10px 12px;
     border-radius: var(--radius-md);
-    background: rgba(242, 109, 125, 0.1);
-    border: 1px solid rgba(242, 109, 125, 0.3);
+    background: rgba(255, 77, 106, 0.1);
+    border: 1px solid rgba(255, 77, 106, 0.3);
     color: var(--error);
     font-size: 13px;
 }

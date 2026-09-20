@@ -120,7 +120,7 @@ export function AuditLogsPage() {
 
                                     <td style={{ padding: '14px 20px', fontWeight: 500, color: 'var(--text-primary)' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                            <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'rgba(129, 140, 248, 0.15)', color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>
+                                            <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>
                                                 {log.actor?.name.charAt(0) || 'S'}
                                             </div>
                                             <span>{log.actor?.name || 'System Automated'}</span>

@@ -31,24 +31,24 @@ function CustomTooltip({ active, payload, label, unit }: any) {
         return (
             <div
                 style={{
-                    background: 'rgba(16, 17, 24, 0.94)',
+                    background: 'var(--surface-secondary)',
                     backdropFilter: 'blur(16px)',
                     WebkitBackdropFilter: 'blur(16px)',
-                    border: '1px solid rgba(124, 106, 246, 0.35)',
+                    border: '1px solid var(--border-strong)',
                     borderRadius: 10,
                     padding: '10px 14px',
-                    boxShadow: '0 12px 32px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06)',
+                    boxShadow: 'var(--shadow-lg)',
                     minWidth: 170,
                 }}
             >
                 <div
                     style={{
                         fontSize: 12,
-                        fontWeight: 600,
+                        fontWeight: 700,
                         color: 'var(--text-primary)',
                         marginBottom: 8,
                         paddingBottom: 6,
-                        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderBottom: '1px solid var(--border)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
@@ -79,9 +79,9 @@ function CustomTooltip({ active, payload, label, unit }: any) {
                                         boxShadow: `0 0 8px ${entry.color}`,
                                     }}
                                 />
-                                <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{entry.name}:</span>
+                                <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{entry.name}:</span>
                             </div>
-                            <span style={{ color: '#FFFFFF', fontWeight: 600, fontFamily: 'monospace' }}>
+                            <span style={{ color: 'var(--text-primary)', fontWeight: 700, fontFamily: 'monospace' }}>
                                 {typeof entry.value === 'number' ? entry.value.toLocaleString() : entry.value} {unit}
                             </span>
                         </div>
@@ -165,13 +165,13 @@ export function MetricChart({
                                 );
                             })}
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" vertical={false} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" vertical={false} />
                         <XAxis
                             dataKey="time"
                             stroke="var(--text-muted)"
                             fontSize={11}
                             tickLine={false}
-                            axisLine={{ stroke: 'rgba(255, 255, 255, 0.08)' }}
+                            axisLine={{ stroke: 'var(--border-subtle)' }}
                         />
                         <YAxis
                             stroke="var(--text-muted)"

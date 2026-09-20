@@ -233,7 +233,7 @@ export function PoliciesPage() {
                                                 width: 40,
                                                 height: 40,
                                                 borderRadius: 'var(--radius-md)',
-                                                background: isSafety ? 'rgba(129, 140, 248, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                                                background: isSafety ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 176, 32, 0.12)',
                                                 color: isSafety ? 'var(--accent)' : 'var(--warning)',
                                                 display: 'inline-flex',
                                                 alignItems: 'center',

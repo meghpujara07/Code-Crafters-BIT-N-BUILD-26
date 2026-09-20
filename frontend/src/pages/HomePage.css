@@ -33,7 +33,7 @@
     width: 900px;
     height: 600px;
     background: radial-gradient(ellipse at center,
-            rgba(124, 106, 246, 0.07) 0%,
+            rgba(56, 189, 248, 0.07) 0%,
             rgba(67, 56, 202, 0.03) 40%,
             transparent 70%);
 }
@@ -230,7 +230,7 @@
 }
 
 .kpi-icon.green {
-    background: rgba(53, 211, 153, 0.10);
+    background: rgba(52, 211, 153, 0.10);
     color: var(--success);
 }
 
@@ -427,12 +427,12 @@
 }
 
 .cost-change.down {
-    background: rgba(53, 211, 153, 0.10);
+    background: rgba(52, 211, 153, 0.10);
     color: var(--success);
 }
 
 .cost-change.up {
-    background: rgba(242, 109, 125, 0.10);
+    background: rgba(255, 77, 106, 0.10);
     color: var(--error);
 }
 
@@ -678,7 +678,7 @@
 }
 
 .resource-health-badge.healthy {
-    background: rgba(53, 211, 153, 0.08);
+    background: rgba(52, 211, 153, 0.08);
     color: var(--success);
 }
 
@@ -688,7 +688,7 @@
 }
 
 .resource-health-badge.unhealthy {
-    background: rgba(242, 109, 125, 0.08);
+    background: rgba(255, 77, 106, 0.08);
     color: var(--error);
 }
 
@@ -761,11 +761,11 @@
 
     0%,
     100% {
-        box-shadow: 0 0 0 0 rgba(124, 106, 246, 0.2);
+        box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.2);
     }
 
     50% {
-        box-shadow: 0 0 20px 4px rgba(124, 106, 246, 0.15);
+        box-shadow: 0 0 20px 4px rgba(56, 189, 248, 0.15);
     }
 }
 

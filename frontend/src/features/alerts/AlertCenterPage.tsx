@@ -165,7 +165,7 @@ export function AlertCenterPage() {
                                 fontWeight: 500,
                                 borderRadius: 'var(--radius-sm)',
                                 border: `1px solid ${severityFilter === sev ? 'var(--accent)' : 'var(--border)'}`,
-                                background: severityFilter === sev ? 'rgba(129, 140, 248, 0.12)' : 'var(--surface-secondary)',
+                                background: severityFilter === sev ? 'rgba(56, 189, 248, 0.12)' : 'var(--surface-secondary)',
                                 color: severityFilter === sev ? 'var(--accent)' : 'var(--text-secondary)',
                                 cursor: 'pointer',
                             }}
@@ -210,7 +210,7 @@ export function AlertCenterPage() {
                                             width: 40,
                                             height: 40,
                                             borderRadius: 'var(--radius-md)',
-                                            background: isCritical ? 'rgba(242, 109, 125, 0.12)' : isWarning ? 'rgba(245, 158, 11, 0.12)' : 'rgba(129, 140, 248, 0.12)',
+                                            background: isCritical ? 'rgba(255, 77, 106, 0.12)' : isWarning ? 'rgba(255, 176, 32, 0.12)' : 'rgba(56, 189, 248, 0.12)',
                                             color: isCritical ? 'var(--error)' : isWarning ? 'var(--warning)' : 'var(--accent)',
                                             display: 'inline-flex',
                                             alignItems: 'center',

@@ -145,7 +145,7 @@ export function UserManagementPage() {
                                                         width: 40,
                                                         height: 40,
                                                         borderRadius: '50%',
-                                                        background: 'rgba(129, 140, 248, 0.15)',
+                                                        background: 'rgba(56, 189, 248, 0.15)',
                                                         color: 'var(--accent)',
                                                         display: 'inline-flex',
                                                         alignItems: 'center',

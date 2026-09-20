@@ -58,13 +58,13 @@ export function PlaceholderPage({
 export function NotAuthorizedPage({ permission }: { permission?: Permission }) {
     return (
         <div style={{ padding: '40px 32px', maxWidth: 1000 }}>
-            <div className="s-card" style={{ padding: 32, textAlign: 'center', borderColor: 'rgba(242, 109, 125, 0.3)' }}>
+            <div className="s-card" style={{ padding: 32, textAlign: 'center', borderColor: 'rgba(255, 77, 106, 0.3)' }}>
                 <div
                     style={{
                         width: 48,
                         height: 48,
                         borderRadius: 12,
-                        background: 'rgba(242, 109, 125, 0.1)',
+                        background: 'rgba(255, 77, 106, 0.1)',
                         color: 'var(--error)',
                         display: 'inline-flex',
                         alignItems: 'center',

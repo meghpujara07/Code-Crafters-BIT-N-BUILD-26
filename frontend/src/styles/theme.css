@@ -4,46 +4,47 @@
    ============================================================ */
 
 :root {
-  /* ---- Application Canvas ---- */
-  --background: #0B0B10;
+  /* ---- Application Canvas (Pure OLED Black) ---- */
+  --background: #000000;
 
-  /* ---- Surfaces ---- */
-  --surface: #14141B;
-  --surface-secondary: #1A1A24;
-  --surface-tertiary: #22222D;
+  /* ---- Surfaces (Deep Premium Dark Layers) ---- */
+  --surface: #050505;
+  --surface-secondary: #0A0A0E;
+  --surface-tertiary: #12121A;
 
-  /* ---- Borders ---- */
-  --border: #292936;
-  --border-strong: #3A3A4A;
+  /* ---- Borders (Ultra Crisp Glassmorphism) ---- */
+  --border: #1A1A24;
+  --border-strong: #2A2A3A;
 
   /* ---- Text ---- */
-  --text-primary: #F5F5FA;
-  --text-secondary: #E2E2EC;
-  --text-muted: #8888A0;
-  --text-disabled: #5D5D70;
+  /* ---- Text (Ultra High Contrast) ---- */
+  --text-primary: #FFFFFF;
+  --text-secondary: #CBD5E1;
+  --text-muted: #94A3B8;
+  --text-disabled: #64748B;
 
-  /* ---- Primary Accent (Lavender/Purple) ---- */
-  --accent: #7C6AF6;
-  --accent-hover: #8C7CFF;
-  --accent-dark: #6655D8;
-  --accent-soft: rgba(124, 106, 246, 0.12);
-  --accent-border: rgba(124, 106, 246, 0.35);
+  /* ---- Primary Accent (Nordic Teal / Cyan) ---- */
+  --accent: #14B8A6;
+  --accent-hover: #0D9488;
+  --accent-dark: #0F766E;
+  --accent-soft: rgba(20, 184, 166, 0.12);
+  --accent-border: rgba(20, 184, 166, 0.35);
 
-  /* ---- Indian Heritage Accents (use very sparingly) ---- */
-  --royal-indigo: #4338CA;
+  /* ---- Heritage Accents ---- */
+  --royal-indigo: #6366F1;
   --warm-saffron: #F59E0B;
-  --antique-gold: #D4A72C;
-  --warm-ivory: #F3E9D2;
+  --antique-gold: #14B8A6;
+  --warm-ivory: #F8FAFC;
   --deep-maroon: #7F1D1D;
 
   /* ---- Semantic Colors ---- */
-  --success: #35D399;
-  --healthy: #35D399;
-  --warning: #F5B84B;
-  --error: #F26D7D;
-  --info: #8FB7FF;
-  --ai: #7C6AF6;
-  --optimization: #8DF0CC;
+  --success: #34D399;
+  --healthy: #34D399;
+  --warning: #F59E0B;
+  --error: #F87171;
+  --info: #06B6D4;
+  --ai: #818CF8;
+  --optimization: #14B8A6;
 
   /* ---- Spacing (4px base) ---- */
   --space-1: 4px;
@@ -475,46 +476,30 @@ a:hover {
 }
 
 /* ============================================================
-   Card & Panel Aliases
+   Card & Panel Systems
    ============================================================ */
-.s-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5);
-}
-
-/* ============================================================
-   Card
-   ============================================================ */
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5);
-}
-
-.card-hover {
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-}
-
-.card-hover:hover {
-  background: var(--surface-secondary);
-  border-color: var(--border-strong);
-}
-
-/* ============================================================
-   Panel
-   ============================================================ */
-
+.s-card,
+.card,
 .panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(14, 14, 20, 0.95) 0%, rgba(5, 5, 8, 0.98) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  padding: var(--space-5);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(12px);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
 }
 
+.s-card:hover,
+.card-hover:hover,
+.panel:hover {
+  border-color: rgba(20, 184, 166, 0.28);
+  box-shadow: 0 6px 24px rgba(20, 184, 166, 0.12);
+}
+
+/* ============================================================
+   Panel Header
+   ============================================================ */
 .panel-header {
   display: flex;
   align-items: center;
@@ -1191,4 +1176,153 @@ a:hover {
 
 .bg-accent-soft {
   background: var(--accent-soft);
+}
+
+/* ============================================================
+   LIGHT MODE THEME OVERRIDES
+   ============================================================ */
+[data-theme="light"] {
+  /* ---- Canvas & Backgrounds (Clean Executive Crisp Slate) ---- */
+  --background: #F8FAFC;
+  --surface: #FFFFFF;
+  --surface-secondary: #F1F5F9;
+  --surface-tertiary: #E2E8F0;
+
+  /* ---- Glass & Overlay Effects ---- */
+  --glass-bg: rgba(255, 255, 255, 0.88);
+  --glass-border: rgba(226, 232, 240, 0.8);
+  --overlay-bg: rgba(15, 23, 42, 0.4);
+
+  /* ---- Borders ---- */
+  --border: #E2E8F0;
+  --border-strong: #CBD5E1;
+  --border-hover: #94A3B8;
+
+  /* ---- Typography (Ultra High Contrast Dark Slate) ---- */
+  --text-primary: #0F172A;
+  --text-secondary: #334155;
+  --text-muted: #64748B;
+  --text-disabled: #94A3B8;
+
+  /* ---- Nordic Teal Accents ---- */
+  --accent: #0D9488;
+  --accent-hover: #0F766E;
+  --accent-dark: #115E59;
+  --accent-soft: rgba(13, 148, 136, 0.12);
+  --accent-border: rgba(13, 148, 136, 0.3);
+}
+
+/* Light Mode Component Overrides */
+[data-theme="light"] .s-card,
+[data-theme="light"] .card,
+[data-theme="light"] .panel {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05), 0 4px 12px rgba(15, 23, 42, 0.03);
+  backdrop-filter: none;
+}
+
+[data-theme="light"] .s-card:hover,
+[data-theme="light"] .card-hover:hover,
+[data-theme="light"] .panel:hover {
+  border-color: rgba(13, 148, 136, 0.4);
+  box-shadow: 0 6px 20px rgba(13, 148, 136, 0.12), 0 2px 6px rgba(15, 23, 42, 0.04);
+}
+
+[data-theme="light"] .sidebar {
+  background: #FFFFFF;
+  border-right: 1px solid #E2E8F0;
+}
+
+[data-theme="light"] .header {
+  background: rgba(255, 255, 255, 0.88);
+  border-bottom: 1px solid #E2E8F0;
+}
+
+[data-theme="light"] .nav-item {
+  color: #475569;
+}
+
+[data-theme="light"] .nav-item:hover {
+  background: #F1F5F9;
+  color: #0F172A;
+}
+
+[data-theme="light"] .nav-item.active {
+  background: rgba(13, 148, 136, 0.1);
+  color: #0D9488;
+  border-left-color: #0D9488;
+}
+
+[data-theme="light"] .input,
+[data-theme="light"] .select {
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  color: #0F172A;
+}
+
+[data-theme="light"] .input:focus,
+[data-theme="light"] .select:focus {
+  border-color: #0D9488;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15);
+}
+
+[data-theme="light"] .table th {
+  background: #F8FAFC;
+  color: #475569;
+  border-bottom: 1px solid #E2E8F0;
+}
+
+[data-theme="light"] .table td {
+  border-bottom: 1px solid #F1F5F9;
+  color: #0F172A;
+}
+
+[data-theme="light"] .table tr:hover td {
+  background: #F8FAFC;
+}
+
+[data-theme="light"] .btn-secondary {
+  background: #F1F5F9;
+  color: #0F172A;
+  border-color: #CBD5E1;
+}
+
+[data-theme="light"] .btn-secondary:hover {
+  background: #E2E8F0;
+}
+
+[data-theme="light"] .badge-ai {
+  background: rgba(99, 102, 241, 0.12);
+  color: #4F46E5;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+[data-theme="light"] .icon-btn {
+  color: #475569;
+  border-color: #CBD5E1;
+  background: #FFFFFF;
+}
+
+[data-theme="light"] .icon-btn:hover {
+  background: #F1F5F9;
+  color: #0F172A;
+  border-color: #94A3B8;
+}
+
+[data-theme="light"] .search-input-wrapper {
+  background: #F1F5F9;
+  border-color: #CBD5E1;
+}
+
+[data-theme="light"] .search-shortcut {
+  background: #E2E8F0;
+  color: #475569;
+  border-color: #CBD5E1;
+}
+
+[data-theme="light"] .system-status-indicator {
+  background: #F1F5F9;
+  border-color: #CBD5E1;
+  color: #334155;
 }

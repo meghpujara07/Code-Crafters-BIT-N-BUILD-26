@@ -3,7 +3,8 @@
 // ============================================================
 
 import React, { useState } from 'react';
-import { Cloud, Lock, Mail, ArrowRight, Shield } from 'lucide-react';
+import { Lock, Mail, ArrowRight, Shield } from 'lucide-react';
+import { CloudOpsLogo } from '../../components/common/CloudOpsLogo';
 import { useLogin } from './useLogin';
 import { Role } from '../../api/types';
 import './LoginPage.css';
@@ -36,8 +37,8 @@ export function LoginPage() {
             <div className="login-bg" />
             <div className="login-card">
                 <div className="login-header">
-                    <div className="login-logo">
-                        <Cloud />
+                    <div style={{ display: 'inline-flex', marginBottom: 12 }}>
+                        <CloudOpsLogo size="lg" />
                     </div>
                     <h1 className="login-title">CloudOps Control Plane</h1>
                     <p className="login-subtitle">Sign in to manage multi-cloud infrastructure</p>

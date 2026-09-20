@@ -2,12 +2,14 @@
 // CloudOps — Top Header Component
 // ============================================================
 
-import { Search, Bell, Command, Sparkles, User as UserIcon, LogOut } from 'lucide-react';
+import { Search, Bell, Command, Sparkles, User as UserIcon, LogOut, Sun, Moon } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { useThemeStore } from '../../store/themeStore';
 import { useState } from 'react';
 
 export function Header() {
     const { user, logout } = useAuthStore();
+    const { theme, toggleTheme } = useThemeStore();
     const [showDropdown, setShowDropdown] = useState(false);
 
     return (
@@ -32,6 +34,19 @@ export function Header() {
             </div>
 
             <div className="header-right">
+                <button
+                    className="icon-btn"
+                    onClick={toggleTheme}
+                    title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                    aria-label="Toggle Theme"
+                >
+                    {theme === 'dark' ? (
+                        <Sun size={16} style={{ color: '#F59E0B' }} />
+                    ) : (
+                        <Moon size={16} style={{ color: '#6366F1' }} />
+                    )}
+                </button>
+
                 <button className="icon-btn" title="AI Assistant">
                     <Sparkles size={16} style={{ color: 'var(--accent)' }} />
                 </button>

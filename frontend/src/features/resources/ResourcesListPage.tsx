@@ -304,7 +304,7 @@ export function ResourcesListPage() {
                                                         width: 32,
                                                         height: 32,
                                                         borderRadius: 8,
-                                                        background: 'rgba(124, 106, 246, 0.12)',
+                                                        background: 'rgba(56, 189, 248, 0.12)',
                                                         color: 'var(--accent)',
                                                         display: 'inline-flex',
                                                         alignItems: 'center',
