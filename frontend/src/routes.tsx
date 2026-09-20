@@ -47,6 +47,12 @@ import { ResourceDetailPage } from './features/resources/ResourceDetailPage';
 import { CostsPage } from './features/costs/CostsPage';
 import { RecommendationsPage } from './features/recommendations/RecommendationsPage';
 import { ApprovalsPage } from './features/approvals/ApprovalsPage';
+import { PoliciesPage } from './features/policies/PoliciesPage';
+import { CloudAccountsPage } from './features/accounts/CloudAccountsPage';
+import { AlertCenterPage } from './features/alerts/AlertCenterPage';
+import { AuditLogsPage } from './features/audit/AuditLogsPage';
+import { NotificationsPage } from './features/notifications/NotificationsPage';
+import { UserManagementPage } from './features/users/UserManagementPage';
 
 export function AppRoutes() {
     return (
@@ -132,12 +138,7 @@ export function AppRoutes() {
                     path="/policies"
                     element={
                         <PermissionGuard permission="policies.read">
-                            <PlaceholderPage
-                                title="Guardrail Policies & Budgets"
-                                description="Safety limits, auto-scaling constraints, and hard budget threshold configuration."
-                                milestone="Commit 5 (M3)"
-                                permission="policies.read"
-                            />
+                            <PoliciesPage />
                         </PermissionGuard>
                     }
                 />
@@ -147,12 +148,7 @@ export function AppRoutes() {
                     path="/accounts"
                     element={
                         <PermissionGuard permission="accounts.manage">
-                            <PlaceholderPage
-                                title="Cloud Account Connections"
-                                description="AWS, Azure, and GCP provider credential management and synchronization status."
-                                milestone="Commit 5 (M3)"
-                                permission="accounts.manage"
-                            />
+                            <CloudAccountsPage />
                         </PermissionGuard>
                     }
                 />
@@ -162,12 +158,7 @@ export function AppRoutes() {
                     path="/alerts"
                     element={
                         <PermissionGuard permission="metrics.read">
-                            <PlaceholderPage
-                                title="Unified Alert Center"
-                                description="Real-time incident feed, health degradation notifications, and anomaly tracking."
-                                milestone="Commit 5 (M3)"
-                                permission="metrics.read"
-                            />
+                            <AlertCenterPage />
                         </PermissionGuard>
                     }
                 />
@@ -175,13 +166,7 @@ export function AppRoutes() {
                 {/* 11. Notifications (Commit 5) */}
                 <Route
                     path="/settings/notifications"
-                    element={
-                        <PlaceholderPage
-                            title="Notification Channels"
-                            description="Email, WhatsApp, and in-app notification routing preferences per event type."
-                            milestone="Commit 5 (M3)"
-                        />
-                    }
+                    element={<NotificationsPage />}
                 />
 
                 {/* 12. Audit Logs (Commit 5) */}
@@ -189,12 +174,7 @@ export function AppRoutes() {
                     path="/audit"
                     element={
                         <PermissionGuard permission="audit.read">
-                            <PlaceholderPage
-                                title="Security & Audit Trail"
-                                description="Immutable audit history of all user actions, policy checks, and scaling operations."
-                                milestone="Commit 5 (M3)"
-                                permission="audit.read"
-                            />
+                            <AuditLogsPage />
                         </PermissionGuard>
                     }
                 />
@@ -204,12 +184,7 @@ export function AppRoutes() {
                     path="/admin/users"
                     element={
                         <PermissionGuard permission="users.manage">
-                            <PlaceholderPage
-                                title="User & RBAC Management"
-                                description="Team member invitations, role assignments (Admin, Manager, DevOps, Viewer), and permission control."
-                                milestone="Commit 5 (M3)"
-                                permission="users.manage"
-                            />
+                            <UserManagementPage />
                         </PermissionGuard>
                     }
                 />

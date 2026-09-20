@@ -27,6 +27,10 @@ import {
     Recommendation,
     Alert,
     Resource,
+    Policy,
+    CloudAccount,
+    AuditLog,
+    NotificationSetting,
 } from '../api/types';
 
 // Mock initial datasets for read endpoints
@@ -243,6 +247,148 @@ const MOCK_ANOMALIES: Anomaly[] = [
         observedValue: 46.25,
         status: 'OPEN',
         detectedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+    },
+];
+
+const MOCK_POLICIES: Policy[] = [
+    {
+        id: 'pol-001',
+        name: 'Non-Prod Auto-Shutdown & Instance Cap',
+        type: 'SAFETY_LIMIT',
+        enabled: true,
+        priority: 10,
+        scope: { provider: 'AWS', resourceType: 'COMPUTE' },
+        rules: {
+            maxInstances: 10,
+            minInstances: 1,
+            maxScaleStepPercent: 50,
+            maxCostIncreasePerActionUsd: 200,
+            blockedActions: ['STOP'],
+        },
+    },
+    {
+        id: 'pol-002',
+        name: 'High Cost Scale Action Approval Required',
+        type: 'APPROVAL_RULE',
+        enabled: true,
+        priority: 5,
+        scope: {},
+        rules: {
+            requireApprovalWhen: { costDeltaMonthlyUsdGt: 100, actionTypeIn: ['SCALE_OUT'] },
+            approverRole: 'MANAGER',
+        },
+    },
+    {
+        id: 'pol-003',
+        name: 'Database Storage Expansion Guardrail',
+        type: 'SAFETY_LIMIT',
+        enabled: true,
+        priority: 2,
+        scope: { resourceType: 'DATABASE' },
+        rules: {
+            maxInstances: 5,
+            minInstances: 1,
+        },
+    },
+];
+
+const MOCK_ACCOUNTS: CloudAccount[] = [
+    {
+        id: 'acc-aws-prod',
+        name: 'Production AWS Primary',
+        provider: 'AWS',
+        externalAccountId: 'aws-account-882194',
+        regions: ['us-east-1', 'us-west-2', 'eu-central-1'],
+        mode: 'LIVE',
+        status: 'CONNECTED',
+        lastSyncedAt: new Date().toISOString(),
+        resourceCount: 14,
+    },
+    {
+        id: 'acc-azure-prod',
+        name: 'Azure Enterprise Services',
+        provider: 'AZURE',
+        externalAccountId: 'az-sub-748291',
+        regions: ['eastus', 'westeurope'],
+        mode: 'LIVE',
+        status: 'CONNECTED',
+        lastSyncedAt: new Date(Date.now() - 300000).toISOString(),
+        resourceCount: 8,
+    },
+    {
+        id: 'acc-gcp-dev',
+        name: 'GCP Analytics Sandbox',
+        provider: 'GCP',
+        externalAccountId: 'gcp-project-918237',
+        regions: ['us-central1'],
+        mode: 'MOCK',
+        status: 'CONNECTED',
+        lastSyncedAt: new Date(Date.now() - 900000).toISOString(),
+        resourceCount: 5,
+    },
+];
+
+const MOCK_AUDIT_LOGS: AuditLog[] = [
+    {
+        id: 'aud-1001',
+        actor: { id: 'usr-devops-01', name: 'Alex Chen (DevOps)' },
+        action: 'ACTION_REQUESTED',
+        entityType: 'RESOURCE',
+        entityId: 'b4a2e0d1-0c3e-4f6a-8d75-2f7c9a1e5b30',
+        before: { targetInstances: 4 },
+        after: { targetInstances: 6, costDeltaUsd: 60.74 },
+        ts: new Date(Date.now() - 1200000).toISOString(),
+    },
+    {
+        id: 'aud-1002',
+        actor: { id: 'usr-manager-01', name: 'Marcus Vance (Manager)' },
+        action: 'ACTION_APPROVED',
+        entityType: 'ACTION',
+        entityId: 'act-sample-pending',
+        before: { status: 'PENDING_APPROVAL' },
+        after: { status: 'EXECUTING', approvedBy: 'usr-manager-01' },
+        ts: new Date(Date.now() - 3600000).toISOString(),
+    },
+    {
+        id: 'aud-1003',
+        actor: { id: 'usr-admin-01', name: 'Sarah Connor (Admin)' },
+        action: 'POLICY_UPDATED',
+        entityType: 'POLICY',
+        entityId: 'pol-001',
+        before: { maxInstances: 8 },
+        after: { maxInstances: 10 },
+        ts: new Date(Date.now() - 86400000).toISOString(),
+    },
+    {
+        id: 'aud-1004',
+        actor: { id: 'usr-admin-01', name: 'Sarah Connor (Admin)' },
+        action: 'ACCOUNT_CONNECTED',
+        entityType: 'CLOUD_ACCOUNT',
+        entityId: 'acc-aws-prod',
+        before: null,
+        after: { provider: 'AWS', accountId: 'aws-account-882194' },
+        ts: new Date(Date.now() - 172800000).toISOString(),
+    },
+];
+
+const MOCK_NOTIFICATION_SETTINGS: NotificationSetting[] = [
+    {
+        channel: 'IN_APP',
+        enabled: true,
+        events: ['APPROVAL_REQUESTED', 'ALERT_CREATED'],
+        destination: 'Control Plane In-App Banner',
+    },
+    {
+        channel: 'EMAIL',
+        enabled: true,
+        events: ['BUDGET_THRESHOLD', 'COST_ANOMALY'],
+        destination: 'devops-alerts@cloudops.dev',
+    },
+    {
+        channel: 'WHATSAPP',
+        enabled: false,
+        events: ['APPROVAL_REQUESTED'],
+        destination: '+1 (555) 019-2831',
     },
 ];
 
@@ -844,6 +990,96 @@ export const handlers = [
                 id: params.id,
                 status: 'CANCELLED',
             },
+        });
+    }),
+
+    // ---- GET /api/v1/policies ----
+    http.get('/api/v1/policies', () => {
+        return HttpResponse.json({ success: true, data: MOCK_POLICIES });
+    }),
+
+    // ---- PATCH /api/v1/policies/:id ----
+    http.patch('/api/v1/policies/:id', async ({ params, request }) => {
+        const body = (await request.json()) as any;
+        const pol = MOCK_POLICIES.find(p => p.id === params.id);
+        if (pol) {
+            Object.assign(pol, body);
+        }
+        return HttpResponse.json({ success: true, data: pol });
+    }),
+
+    // ---- GET /api/v1/accounts ----
+    http.get('/api/v1/accounts', () => {
+        return HttpResponse.json({ success: true, data: MOCK_ACCOUNTS });
+    }),
+
+    // ---- POST /api/v1/accounts ----
+    http.post('/api/v1/accounts', async ({ request }) => {
+        const body = (await request.json()) as any;
+        const newAcc: CloudAccount = {
+            id: `acc-${body.provider.toLowerCase()}-${Date.now()}`,
+            name: body.name || 'New Cloud Account',
+            provider: body.provider || 'AWS',
+            externalAccountId: body.externalAccountId || 'acc-12345',
+            regions: body.regions || ['us-east-1'],
+            mode: 'LIVE',
+            status: 'CONNECTED',
+            lastSyncedAt: new Date().toISOString(),
+            resourceCount: 0,
+        };
+        MOCK_ACCOUNTS.push(newAcc);
+        return HttpResponse.json({ success: true, data: newAcc }, { status: 201 });
+    }),
+
+    // ---- GET /api/v1/alerts ----
+    http.get('/api/v1/alerts', () => {
+        return HttpResponse.json({
+            success: true,
+            data: MOCK_ALERTS,
+            meta: { page: 1, pageSize: 20, total: MOCK_ALERTS.length, totalPages: 1 },
+        });
+    }),
+
+    // ---- POST /api/v1/alerts/:id/acknowledge ----
+    http.post('/api/v1/alerts/:id/acknowledge', ({ params }) => {
+        const alert = MOCK_ALERTS.find(a => a.id === params.id);
+        if (alert) alert.status = 'ACKNOWLEDGED';
+        return HttpResponse.json({ success: true, data: alert });
+    }),
+
+    // ---- POST /api/v1/alerts/:id/resolve ----
+    http.post('/api/v1/alerts/:id/resolve', ({ params }) => {
+        const alert = MOCK_ALERTS.find(a => a.id === params.id);
+        if (alert) alert.status = 'RESOLVED';
+        return HttpResponse.json({ success: true, data: alert });
+    }),
+
+    // ---- GET /api/v1/audit/logs ----
+    http.get('/api/v1/audit/logs', () => {
+        return HttpResponse.json({
+            success: true,
+            data: MOCK_AUDIT_LOGS,
+            meta: { page: 1, pageSize: 20, total: MOCK_AUDIT_LOGS.length, totalPages: 1 },
+        });
+    }),
+
+    // ---- GET /api/v1/notifications/settings ----
+    http.get('/api/v1/notifications/settings', () => {
+        return HttpResponse.json({ success: true, data: MOCK_NOTIFICATION_SETTINGS });
+    }),
+
+    // ---- PATCH /api/v1/notifications/settings ----
+    http.patch('/api/v1/notifications/settings', async ({ request }) => {
+        const body = (await request.json()) as any;
+        return HttpResponse.json({ success: true, data: body });
+    }),
+
+    // ---- GET /api/v1/users ----
+    http.get('/api/v1/users', () => {
+        return HttpResponse.json({
+            success: true,
+            data: MOCK_USERS,
+            meta: { page: 1, pageSize: 20, total: MOCK_USERS.length, totalPages: 1 },
         });
     }),
 ];
