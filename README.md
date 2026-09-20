@@ -12,111 +12,30 @@ It brings together infrastructure monitoring, resource management, cost analytic
 
 ## 1. Problem
 
-Modern applications are increasingly deployed across multiple cloud platforms. Managing these environments creates several operational challenges:
-
-- Infrastructure is distributed across different cloud consoles.
-- Teams lack a unified view of resource health and utilization.
-- Cloud spending and budgets are difficult to monitor across providers.
-- Scaling decisions can have unexpected cost and operational impact.
-- High-impact infrastructure changes require governance and approval.
-- Tracking who performed an action and why can be difficult.
+Managing infrastructure across AWS, Azure, and GCP can be complex because teams need to monitor resources, track costs, handle scaling, and follow approval policies across multiple platforms.
 
 ### Proposed Solution
 
-CloudOps provides a **single control plane** for multi-cloud infrastructure.
+CloudOps provides a **single control plane** for:
 
-The platform connects:
-
-- Infrastructure monitoring
+- Multi-cloud monitoring
 - Resource management
-- Cost intelligence
+- Cost tracking
 - AI-assisted recommendations
-- Policy and budget validation
-- Human approval
-- Controlled execution
-- Audit and notifications
-
-### Workflow
-
-```text
-Monitor
-   ↓
-Understand
-   ↓
-Recommend
-   ↓
-Validate
-   ↓
-Approve
-   ↓
-Execute
-   ↓
-Audit
-```
+- Policy validation
+- Approval and controlled scaling
 
 ---
 
 ## 2. Key Features
 
-### Multi-Cloud Management
-
-- Unified AWS, Azure, and GCP resource view
-- Cloud account management
-- Region and provider information
-- Centralized resource inventory
-
-### Infrastructure Monitoring
-
-- Request rate
-- P95 latency
-- CPU utilization
-- Storage utilization
-- Fleet uptime
-- Error rate
-- Configurable monitoring intervals
-
-### Cost Management
-
-- Month-to-date spending
-- End-of-month forecast
-- Budget utilization
-- Daily spending trends
-- Service-level cost breakdown
-- Budget management
-
-### AI-Assisted Optimization
-
-- Scaling recommendations
-- Resource optimization suggestions
-- Cost-saving opportunities
-- AI-generated explanations
-- Confidence and estimated cost impact
-
-### Controlled Scaling
-
-- Scaling preview before execution
-- Current vs. recommended capacity
-- Projected monthly cost
-- Budget impact
-- Policy validation
-- Permission validation
-- Safety-limit validation
-
-### Governance
-
-- Approval workflows
-- Policy-based controls
-- Budget limits
-- Safety limits
-- Role-based permissions
-- Audit trail
-
-### Operations
-
-- Alert and incident management
-- Notification channels
-- Cloud account synchronization
-- Operational activity tracking
+- **Multi-Cloud:** Unified AWS, Azure, and GCP resource management
+- **Monitoring:** Track traffic, latency, uptime, CPU, storage, and errors
+- **Cost Management:** Monitor spending, forecasts, budgets, and service costs
+- **AI Recommendations:** Get optimization and scaling suggestions with cost impact
+- **Controlled Scaling:** Preview cost and validate policies before execution
+- **Governance:** Manage permissions, safety limits, policies, and approvals
+- **Audit & Alerts:** Track actions and receive operational notifications
 
 ---
 
