@@ -39,6 +39,8 @@ jobs:
             sleep 3
           done
       - name: Run migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/cloudops
         run: alembic upgrade head
       - name: Run lint
         run: ruff check .
